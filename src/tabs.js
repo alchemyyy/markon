@@ -53,6 +53,14 @@ export const createTabBar = ({ docs, container }) => {
 
 	const onMove = e => {
 		if (!drag) return
+
+		// Post tear-off, the tab has popped into its own window. The new
+		// window will ask the OS for the current cursor position directly
+		// (via snap_and_drag in Rust) once its tab is built, so we don't
+		// need to keep pumping coords — just swallow pointer events here
+		// until the user releases.
+		if (drag.tornOff) return
+
 		// If a structural re-render swapped out the dragged element behind our
 		// back, abort cleanly instead of mutating a detached node.
 		if (!bar.contains(drag.el)) {
@@ -61,42 +69,29 @@ export const createTabBar = ({ docs, container }) => {
 		}
 		const dx = e.clientX - drag.startX
 		const dy = e.clientY - drag.startY
-		drag.lastClientX = e.clientX
-		drag.lastClientY = e.clientY
-		// MouseEvent.screenX/Y is in CSS pixels relative to the primary screen.
-		// We use this (rather than window.screenX + clientX) for the drop
-		// hit-test because it's what the spec guarantees and avoids any
-		// Tauri-vs-browser divergence in how window.screenX is reported.
-		drag.lastScreenX = e.screenX
-		drag.lastScreenY = e.screenY
 		if (!drag.started) {
 			if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return
 			drag.started = true
 			drag.el.classList.add('dragging')
 		}
 
-		// Tear-off detection: once the pointer leaves the tab bar vertically by
-		// more than the threshold, flip into tear-off mode. The tab still
-		// follows horizontally inside the bar (so live-reorder shifts revert),
-		// but we visually mark it as ready-to-tear and skip reorder math.
-		// We always allow the visual state — docs.tearOff() decides whether
-		// the drop spawns a new window, rejoins another window, or bounces.
+		// Chrome-style tear-off: the moment the pointer leaves the tab bar
+		// beyond the threshold, pop the tab into a brand-new native window.
+		// We mark the drag `tornOff` but keep listeners alive so we still
+		// see the user's pointerup (needed to avoid a stuck drag state).
 		const rect = bar.getBoundingClientRect()
 		const outOfBar = e.clientY < rect.top - TEAROFF_Y_THRESHOLD || e.clientY > rect.bottom + TEAROFF_Y_THRESHOLD
-		const tearingOff = outOfBar
-		if (tearingOff !== drag.tearingOff) {
-			drag.tearingOff = tearingOff
-			drag.el.classList.toggle('tearing-off', tearingOff)
-			if (tearingOff) {
-				// Revert live-reorder shifts on siblings while in tear-off mode.
-				for (const t of tabElements()) if (t !== drag.el) t.style.transform = ''
-				drag.to = drag.from
-			}
+		if (outOfBar) {
+			const id = drag.el.dataset.id
+			// MouseEvent.screenX/Y are CSS pixels — pass through to Tauri's
+			// logical-pixel window options unscaled.
+			const dropAt = { x: Math.round(e.screenX), y: Math.round(e.screenY) }
+			drag.tornOff = true
+			docs.tearOffInFlight(id, dropAt)
+			return
 		}
 
-		drag.el.style.transform = `translateX(${dx}px)${tearingOff ? ` translateY(${Math.max(-20, Math.min(20, dy * 0.25))}px)` : ''}`
-
-		if (tearingOff) return
+		drag.el.style.transform = `translateX(${dx}px)`
 
 		const newTo = computeTarget(dx, drag.from, tabElements().length, drag.el.offsetWidth)
 		if (newTo !== drag.to) {
@@ -112,33 +107,14 @@ export const createTabBar = ({ docs, container }) => {
 		if (!drag) return
 		const captured = drag
 		drag = null
-		if (!captured.started) return
-
 		lastDragEndAt = Date.now()
 
-		if (captured.tearingOff) {
-			const id = captured.el.dataset.id
-			// Tauri's window APIs (outerPosition/outerSize, new window x/y) use
-			// physical pixels — convert the release's CSS-pixel screen coords
-			// by DPR. No cursor offset here; tearOff() nudges the spawn
-			// position itself when it creates a new window.
-			const dpr = window.devicePixelRatio || 1
-			const dropAt = {
-				x: Math.round((captured.lastScreenX ?? 0) * dpr),
-				y: Math.round((captured.lastScreenY ?? 0) * dpr),
-			}
-			const resetVisual = () => {
-				for (const t of tabElements()) t.style.transform = ''
-				captured.el.classList.remove('dragging', 'tearing-off')
-			}
-			docs.tearOff(id, dropAt).then(ok => {
-				// Tear-off rejected (web mode, only tab, or Tauri error) —
-				// snap the tab back into place. On success, docs renders the
-				// new state and naturally drops the transforms.
-				if (!ok) resetVisual()
-			})
-			return
-		}
+		// After tear-off the tab no longer belongs to this window — nothing
+		// to reset or reorder here. OS drag (if it caught in time) ends on
+		// its own when the user releases.
+		if (captured.tornOff) return
+
+		if (!captured.started) return
 
 		if (captured.to != null && captured.to !== captured.from) {
 			// reorder() fires a render that replaces every tab element with a
@@ -151,6 +127,61 @@ export const createTabBar = ({ docs, container }) => {
 			captured.el.classList.remove('dragging')
 		}
 	}
+
+	// When a tab is docked into this window mid-drag (source window is
+	// about to destroy), the OS drag session ends and the cursor becomes
+	// "free" again. Pointer events start reaching us, but there's no
+	// preceding pointerdown to enter a normal drag state. To support
+	// Chrome-style "continue dragging after dock", we arm a one-shot
+	// listener here: on the next pointermove, if the user's mouse button
+	// is still held, we spin up a drag on the newly-inserted tab as if
+	// they had just pointerdown'd on it. From there all the usual drag
+	// machinery (reorder within bar, tear-off past threshold) just works.
+	const armDragContinuation = tabId => {
+		let timer = null
+		const cleanup = () => {
+			if (timer) clearTimeout(timer)
+			timer = null
+			window.removeEventListener('pointermove', onFirstMove)
+			window.removeEventListener('pointerup', onFirstUp)
+			window.removeEventListener('pointercancel', onFirstUp)
+		}
+		const onFirstMove = e => {
+			cleanup()
+			// Button already released (pointermove with no buttons held) —
+			// user just dropped, no continuation needed.
+			if (e.buttons === 0) return
+			const all = tabElements()
+			const tabEl = all.find(t => t.dataset.id === tabId)
+			if (!tabEl) return
+			const idx = all.indexOf(tabEl)
+			if (idx < 0) return
+			drag = {
+				el: tabEl,
+				from: idx,
+				startX: e.clientX,
+				startY: e.clientY,
+				// Skip the DRAG_THRESHOLD gate — we know the user is
+				// already mid-gesture; treat the drag as active right away.
+				started: true,
+				to: null,
+				tornOff: false,
+			}
+			tabEl.classList.add('dragging')
+			window.addEventListener('pointermove', onMove)
+			window.addEventListener('pointerup', endDrag)
+			window.addEventListener('pointercancel', endDrag)
+		}
+		const onFirstUp = () => cleanup()
+		// Safety: if no pointer events fire at all (e.g. user clicked the
+		// tab bar with a stylus that doesn't report buttons), give up.
+		timer = setTimeout(cleanup, 1500)
+		window.addEventListener('pointermove', onFirstMove)
+		window.addEventListener('pointerup', onFirstUp)
+		window.addEventListener('pointercancel', onFirstUp)
+	}
+
+	docs.onTabDocked?.(armDragContinuation)
 
 	const makeTab = doc => {
 		const el = createElement('div', {
@@ -167,6 +198,17 @@ export const createTabBar = ({ docs, container }) => {
 		el.addEventListener('pointerdown', e => {
 			if (e.button !== 0) return // left button only
 			if (e.target.closest('.tab-close')) return
+
+			// If this is the only tab in the window, dragging it drags the
+			// whole window (nothing to reorder or tear off). docs handles
+			// this — it starts OS drag AND watches for the drag settling
+			// over another window's tab bar, in which case the tab docks
+			// into that window and ours closes/empties.
+			if (tabElements().length === 1) {
+				docs.dockTabViaWindowDrag(doc.id, e.screenX, e.screenY)
+				return
+			}
+
 			const idx = tabElements().indexOf(el)
 			if (idx < 0) return
 			drag = {
@@ -176,11 +218,7 @@ export const createTabBar = ({ docs, container }) => {
 				startY: e.clientY,
 				started: false,
 				to: null,
-				tearingOff: false,
-				lastClientX: e.clientX,
-				lastClientY: e.clientY,
-				lastScreenX: e.screenX,
-				lastScreenY: e.screenY,
+				tornOff: false,
 			}
 			window.addEventListener('pointermove', onMove)
 			window.addEventListener('pointerup', endDrag)

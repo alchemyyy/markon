@@ -5,13 +5,15 @@ import {
 	confirmTabAdopted,
 	createTearoffWindow,
 	focusCurrentWindow,
+	getCurrentInnerPosition,
 	getCurrentWindowLabel,
-	isPointOverCurrentWindow,
+	onWindowGeometryChange,
 	openText,
 	readFileAt,
 	saveAs,
 	saveToPath,
 	setCurrentFile,
+	startNativeWindowDrag,
 	subscribeTabAdopted,
 	subscribeTabOffer,
 	TEAROFF_PAYLOAD_PREFIX,
@@ -89,12 +91,35 @@ export const createDocsStore = ({ editor, showToast, onActiveChange }) => {
 	const subscribers = []
 	const dirtyIds = new Set()
 
-	// Cross-window IPC state. currentLabel is resolved once at init; pending
-	// acks map a tab UUID → resolver callback so multiple tearOff() calls
-	// can be in flight simultaneously without clobbering each other's acks.
+	// Cross-window IPC state. currentLabel is the Tauri window label; used
+	// to tag outgoing offers (so our own listener can ignore echoes) and
+	// as the target for adopt-ACKs coming back from other windows.
+	// pendingAcks maps tabId → resolver callback so multiple in-flight
+	// dock offers can coexist without clobbering each other's resolution.
+	// cachedInnerPos is the content-area top-left in physical pixels,
+	// refreshed on window move/resize so the tab-bar hit-test can resolve
+	// incoming offers synchronously.
 	let currentLabel = null
+	let cachedInnerPos = null
 	const pendingAcks = new Map()
-	const ADOPT_ACK_TIMEOUT_MS = 300
+	// Fired when a tab is adopted into this window via the dock channel.
+	// The tab bar subscribes to this to continue the user's in-flight mouse
+	// drag on the newly-inserted tab (Chrome-style "hook onto" behavior).
+	const dockListeners = []
+
+	const pointOverOurTabBar = ({ x, y }) => {
+		if (!cachedInnerPos) return false
+		const bar = document.getElementById('tab-bar')
+		if (!bar || bar.classList.contains('hidden')) return false
+		const rect = bar.getBoundingClientRect()
+		if (rect.width === 0 || rect.height === 0) return false
+		const dpr = window.devicePixelRatio || 1
+		const left = cachedInnerPos.x + rect.left * dpr
+		const top = cachedInnerPos.y + rect.top * dpr
+		const right = left + rect.width * dpr
+		const bottom = top + rect.height * dpr
+		return x >= left && x < right && y >= top && y < bottom
+	}
 
 	const getActive = () => tabs.find(t => t.id === activeId) ?? null
 
@@ -324,15 +349,21 @@ export const createDocsStore = ({ editor, showToast, onActiveChange }) => {
 	}
 
 	// Accept a doc handed off from another window via the cross-window
-	// tab-transfer channel. Deduplicates by path (same behavior as openPath).
+	// tab-transfer channel. Returns true if a new tab was actually added
+	// (so callers can distinguish real adoption from idempotent no-ops —
+	// continuous offer broadcasting during a drag will retrigger this
+	// handler many times per second while the cursor is over our bar).
+	// Deduplicates by tab id first (same offer resent), then by path
+	// (different UUID for the same file already open here).
 	const adopt = payload => {
-		if (!payload || typeof payload !== 'object') return
+		if (!payload || typeof payload !== 'object') return false
+		if (tabs.some(t => t.id === payload.id)) return false
 		if (payload.path) {
 			const existing = tabs.find(t => t.path === payload.path)
 			if (existing) {
 				switchTo(existing.id)
 				focusCurrentWindow()
-				return
+				return false
 			}
 		}
 		const doc = createDoc(payload)
@@ -340,77 +371,216 @@ export const createDocsStore = ({ editor, showToast, onActiveChange }) => {
 		if (isDirty(doc)) dirtyIds.add(doc.id)
 		switchTo(doc.id)
 		focusCurrentWindow()
-	}
-
-	// Detach a doc from this window. Protocol:
-	//   1. Broadcast `tab-offer` with the tab UUID, full doc, source label,
-	//      and drop point (physical px).
-	//   2. Every other window checks its own outer frame; the one the drop
-	//      landed on adopts the doc and emits `tab-adopted` back.
-	//   3. On ACK (within ADOPT_ACK_TIMEOUT_MS), remove the tab locally; if
-	//      that emptied the source and we're a tear-off window, close.
-	//   4. No ACK = no taker, spawn a fresh window seeded with the doc
-	//      (unless that'd leave us empty — main/tear-off both bounce).
-	//
-	// Returns true if the tear-off was handled; false leaves the tab in place.
-	const tearOff = async (id, dropAt) => {
-		const idx = tabs.findIndex(t => t.id === id)
-		if (idx < 0) return false
-
-		const payload = { ...tabs[idx] }
-		const hasDropAt = dropAt && Number.isFinite(dropAt.x) && Number.isFinite(dropAt.y)
-
-		if (hasDropAt && currentLabel) {
-			const adopted = await new Promise(resolve => {
-				const timer = setTimeout(() => {
-					pendingAcks.delete(id)
-					resolve(false)
-				}, ADOPT_ACK_TIMEOUT_MS)
-				pendingAcks.set(id, () => {
-					clearTimeout(timer)
-					resolve(true)
-				})
-				broadcastTabOffer({
-					tabId: id,
-					doc: payload,
-					sourceLabel: currentLabel,
-					dropX: dropAt.x,
-					dropY: dropAt.y,
-				})
-			})
-			if (adopted) {
-				detachLocal(id)
-				return true
-			}
-		}
-
-		// No other window claimed the drop — fall back to a new window. Skip
-		// when that'd leave the source empty (main repopulates Untitled,
-		// tear-off self-replaces, neither is useful).
-		if (tabs.length === 1) return false
-		// Nudge the new window up-left of the cursor so the title bar lands
-		// near the drop point rather than under it.
-		const spawnAt = hasDropAt ? { x: dropAt.x - 60, y: dropAt.y - 20 } : {}
-		const spawned = await createTearoffWindow(payload, spawnAt)
-		if (!spawned) return false
-		detachLocal(id)
 		return true
 	}
 
-	// Cross-window IPC wiring. Resolves the current window label, then
-	// listens for offers (to adopt) and acks (to unblock tearOff waiters).
+	// While an OS drag is already in progress on this window, broadcast
+	// tab-offers on every window move so any target whose tab bar the
+	// cursor enters can dock the tab (Chrome-style hover adoption). The
+	// cursor is derived from `currentWindowPos + grabOffsetPhysical` —
+	// the offset is invariant during OS drag (the OS just translates the
+	// whole window, cursor-to-corner stays constant).
+	//
+	// Broadcasting: rAF-coalesced, at most one offer per animation frame.
+	// Termination:
+	//   - ACK received (target adopted) → cancel pending rAF, detach,
+	//     destroy source. Happens mid-drag — user doesn't need to release.
+	//   - pointerup without ACK → one last broadcast for the exact
+	//     release position, 300ms grace for a late ACK, then clean up.
+	//   - 30s safety cap (long to accommodate infinite tear↔rejoin
+	//     cycling without the user ever releasing).
+	//
+	// Assumes OS drag has already been engaged by the caller. Used by
+	// both single-tab pointerdown (dockTabViaWindowDrag) and tear-off
+	// spawn (main.js after snap_and_drag).
+	const armRejoinBroadcast = async (id, { grabOffsetPhysical }) => {
+		const doc = tabs.find(t => t.id === id)
+		if (!doc) return
+		const payload = { ...doc }
+
+		if (!currentLabel) currentLabel = await getCurrentWindowLabel()
+		const sourceLabel = currentLabel
+
+		let getCurrentWindow = null
+		try {
+			;({ getCurrentWindow } = await import('@tauri-apps/api/window'))
+		} catch {
+			return
+		}
+		const w = getCurrentWindow()
+
+		const POST_RELEASE_ACK_MS = 300
+		const SAFETY_TIMEOUT_MS = 30000
+
+		let ended = false
+		let rafId = null
+		let unlistenMove = null
+		let currentPos = null
+		let safetyTimer = null
+
+		const end = () => {
+			if (ended) return
+			ended = true
+			if (rafId !== null) cancelAnimationFrame(rafId)
+			rafId = null
+			if (unlistenMove) unlistenMove()
+			unlistenMove = null
+			if (safetyTimer) clearTimeout(safetyTimer)
+			window.removeEventListener('pointerup', onPointerUp)
+			pendingAcks.delete(id)
+		}
+
+		const broadcastNow = () => {
+			if (ended || !currentPos) return
+			broadcastTabOffer({
+				tabId: id,
+				doc: payload,
+				sourceLabel,
+				dropX: currentPos.x + grabOffsetPhysical.x,
+				dropY: currentPos.y + grabOffsetPhysical.y,
+			})
+		}
+
+		const scheduleBroadcast = () => {
+			if (ended || rafId !== null) return
+			rafId = requestAnimationFrame(() => {
+				rafId = null
+				broadcastNow()
+			})
+		}
+
+		pendingAcks.set(id, () => {
+			if (ended) return
+			end()
+			detachLocal(id)
+		})
+
+		const onPointerUp = () => {
+			if (ended) return
+			broadcastNow()
+			setTimeout(end, POST_RELEASE_ACK_MS)
+		}
+		window.addEventListener('pointerup', onPointerUp, { once: true })
+
+		try {
+			unlistenMove = await w.onMoved(ev => {
+				if (ev?.payload) currentPos = { x: ev.payload.x, y: ev.payload.y }
+				scheduleBroadcast()
+			})
+			safetyTimer = setTimeout(end, SAFETY_TIMEOUT_MS)
+		} catch (e) {
+			console.warn('armRejoinBroadcast: onMoved failed', e)
+			end()
+		}
+	}
+
+	// Single-tab window drag: pointerdown on the only tab in this window
+	// hands off to the OS drag loop, then spins up the rejoin-broadcast
+	// loop so the user can drop onto another window's tab bar to merge.
+	// `grabScreenX/Y` are the cursor's CSS-pixel screen coords at the
+	// moment of pointerdown (before OS drag kicked in).
+	const dockTabViaWindowDrag = async (id, grabScreenX, grabScreenY) => {
+		const doc = tabs.find(t => t.id === id)
+		if (!doc) return
+
+		let getCurrentWindow = null
+		try {
+			;({ getCurrentWindow } = await import('@tauri-apps/api/window'))
+		} catch {
+			return
+		}
+		const w = getCurrentWindow()
+
+		// Capture the grab offset BEFORE starting the OS drag so
+		// outerPosition() is still at its resting value.
+		let grabOffsetPhysical
+		try {
+			const outerPos = await w.outerPosition()
+			const dpr = window.devicePixelRatio || 1
+			grabOffsetPhysical = {
+				x: grabScreenX * dpr - outerPos.x,
+				y: grabScreenY * dpr - outerPos.y,
+			}
+		} catch (e) {
+			console.warn('dockTabViaWindowDrag: outerPosition failed', e)
+			return
+		}
+
+		startNativeWindowDrag()
+		await armRejoinBroadcast(id, { grabOffsetPhysical })
+	}
+
+	// Chrome-style tear-off: the moment the user drags a tab out of the bar,
+	// spawn a new native window seeded with that tab and flip it into
+	// OS-managed drag mode (`dragNow=1` in the URL → the new window's
+	// main.js calls startDragging() as its first action). The user's
+	// in-flight mouse drag is picked up by the OS, so the new window
+	// follows the cursor seamlessly until they release.
+	//
+	// Returns the spawned window's Tauri label (or null on failure) so the
+	// caller can keep piping live cursor-position updates to it — the new
+	// window snaps itself under the cursor right before startDragging, so
+	// any cursor drift during the spawn latency is corrected.
+	//
+	// Order matters: we await the spawn IPC *before* detaching locally.
+	// detachLocal may destroy this window (if this was our last tab), and
+	// destroying mid-promise would kill the create-window command before
+	// Tauri dispatches it.
+	const tearOffInFlight = async (id, dropAt) => {
+		const idx = tabs.findIndex(t => t.id === id)
+		if (idx < 0) return null
+		const payload = { ...tabs[idx] }
+		const hasDropAt = dropAt && Number.isFinite(dropAt.x) && Number.isFinite(dropAt.y)
+		// Spawn directly at the cursor; main.js will re-snap to the latest
+		// cursor position (source keeps pumping via cursor-update) right
+		// before handing off to the OS drag. Any initial spawn offset
+		// would just be drift we'd immediately correct anyway.
+		const spawnAt = hasDropAt ? { x: dropAt.x, y: dropAt.y, dragNow: true } : { dragNow: true }
+		const label = await createTearoffWindow(payload, spawnAt)
+		if (!label) return null
+		detachLocal(id)
+		return label
+	}
+
+	// Resolve our window label + prime the innerPosition cache, then wire
+	// up the cross-window dock channel. On offers, adopt the doc only if
+	// the drop point lands on our tab bar. On acks, resolve the pending
+	// dock promise so the source can close itself.
 	;(async () => {
 		currentLabel = await getCurrentWindowLabel()
+		cachedInnerPos = await getCurrentInnerPosition()
+		onWindowGeometryChange(async () => {
+			cachedInnerPos = await getCurrentInnerPosition()
+		})
 
 		subscribeTabOffer(async offer => {
 			if (!offer || !offer.doc) return
-			// Skip our own broadcast echo.
 			if (offer.sourceLabel && offer.sourceLabel === currentLabel) return
-			const over = await isPointOverCurrentWindow({ x: offer.dropX, y: offer.dropY })
-			if (!over) return
-			adopt(offer.doc)
+			// First offer after launch may race the cache prime — fetch
+			// synchronously just this once so we don't silently miss a
+			// legitimate dock attempt.
+			if (!cachedInnerPos) cachedInnerPos = await getCurrentInnerPosition()
+			if (!pointOverOurTabBar({ x: offer.dropX, y: offer.dropY })) return
+			const freshlyAdopted = adopt(offer.doc)
+			// Always ACK on a hit-test match: if the source is still
+			// broadcasting, it needs the handshake to close itself. An
+			// ACK for an already-adopted tab is harmless — first ACK
+			// already fired the source's resolver, subsequent ones are
+			// filtered by the pendingAcks.get check.
 			if (offer.sourceLabel) {
 				confirmTabAdopted(offer.sourceLabel, { tabId: offer.tabId, targetLabel: currentLabel })
+			}
+			// Only arm the drag-continuation on the first real adoption.
+			// Repeated offers for the same tab must not re-arm (would
+			// stack listeners and clobber the user's ongoing drag).
+			if (freshlyAdopted) {
+				for (const cb of dockListeners) {
+					try {
+						cb(offer.doc.id)
+					} catch (e) {
+						console.warn('dockListener failed', e)
+					}
+				}
 			}
 		})
 
@@ -505,7 +675,16 @@ export const createDocsStore = ({ editor, showToast, onActiveChange }) => {
 		saveAs: saveAsDoc,
 		saveAll,
 		reorder,
-		tearOff,
+		tearOffInFlight,
+		dockTabViaWindowDrag,
+		armRejoinBroadcast,
+		onTabDocked: cb => {
+			dockListeners.push(cb)
+			return () => {
+				const i = dockListeners.indexOf(cb)
+				if (i >= 0) dockListeners.splice(i, 1)
+			}
+		},
 		onChange,
 		isDirty,
 		isTearoffWindow: () => IS_TEAROFF_WINDOW,

@@ -173,23 +173,30 @@ export const registerDropHandler = async onFile => {
 // this is the simplest payload channel — no Tauri event timing/race to manage.
 export const TEAROFF_PAYLOAD_PREFIX = 'markon-tearoff-payload__'
 
-export const createTearoffWindow = async (doc, { x, y } = {}) => {
-	if (!isTauri()) return false
+// Spawns a new tear-off window. Returns its Tauri label on success, null
+// on failure — callers (e.g. tabs.js) need the label so they can pipe
+// cursor-position updates to the new window while it's loading.
+export const createTearoffWindow = async (doc, { x, y, dragNow = false } = {}) => {
+	if (!isTauri()) return null
 
 	const windowId = `w_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 	try {
 		localStorage.setItem(TEAROFF_PAYLOAD_PREFIX + windowId, JSON.stringify(doc))
 	} catch (e) {
 		console.warn('tearoff payload write failed', e)
-		return false
+		return null
 	}
 
 	try {
 		const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
 		const label = `tearoff-${windowId}`
 		// Relative URL — Tauri resolves this against the current webview's base
-		// (devUrl in dev, frontendDist in prod).
-		const url = `index.html?windowId=${encodeURIComponent(windowId)}`
+		// (devUrl in dev, frontendDist in prod). dragNow tells the spawning
+		// window to call startDragging() as early as possible so the OS
+		// picks up the in-flight mouse drag (Chrome-style tear-off).
+		const qs = new URLSearchParams({ windowId })
+		if (dragNow) qs.set('dragNow', '1')
+		const url = `index.html?${qs}`
 		const opts = {
 			url,
 			title: `markon — ${doc.name ?? 'Untitled'}`,
@@ -203,13 +210,55 @@ export const createTearoffWindow = async (doc, { x, y } = {}) => {
 			opts.y = Math.round(y)
 		}
 		new WebviewWindow(label, opts)
-		return true
+		return label
 	} catch (e) {
 		console.warn('createTearoffWindow failed', e)
 		try {
 			localStorage.removeItem(TEAROFF_PAYLOAD_PREFIX + windowId)
 		} catch {}
-		return false
+		return null
+	}
+}
+
+// Hand the current mouse drag off to the OS's native window drag. Must be
+// called while the user's mouse button is still held down — on Windows
+// this posts WM_NCLBUTTONDOWN(HTCAPTION) which only enters the modal drag
+// loop if the button is pressed. Used for Chrome-style tab tear-off.
+export const startNativeWindowDrag = async () => {
+	if (!isTauri()) return
+	try {
+		const { getCurrentWindow } = await import('@tauri-apps/api/window')
+		await getCurrentWindow().startDragging()
+	} catch (e) {
+		console.warn('startNativeWindowDrag failed', e)
+	}
+}
+
+// Atomically snap the current window to the cursor's current screen
+// position AND initiate the OS's native window drag. The cursor coords
+// come from the OS inside the Rust command (not passed through JS) so
+// there's no IPC drift — the position is queried microseconds before
+// start_dragging fires, in the same Rust function.
+export const snapAndDrag = async () => {
+	if (!isTauri()) return
+	try {
+		const { invoke } = await import('@tauri-apps/api/core')
+		await invoke('snap_and_drag')
+	} catch (e) {
+		console.warn('snapAndDrag failed', e)
+	}
+}
+
+// Move the current window to the given logical (CSS-pixel) screen position.
+// Used right before startDragging to snap a just-spawned tear-off window
+// under the user's current cursor (they kept moving while we were loading).
+export const setCurrentWindowPosition = async ({ x, y }) => {
+	if (!isTauri()) return
+	try {
+		const { getCurrentWindow, LogicalPosition } = await import('@tauri-apps/api/window')
+		await getCurrentWindow().setPosition(new LogicalPosition(Math.round(x), Math.round(y)))
+	} catch (e) {
+		console.warn('setCurrentWindowPosition failed', e)
 	}
 }
 
@@ -263,6 +312,41 @@ export const isPointOverCurrentWindow = async ({ x, y }) => {
 	} catch (e) {
 		console.warn('isPointOverCurrentWindow failed', e)
 		return false
+	}
+}
+
+// Fetches the current window's content-area top-left in physical pixels.
+// Authoritative source for mapping DOM rects to screen coordinates —
+// unlike `window.screenX`, Tauri's innerPosition is consistent across
+// platforms (window.screenX on Windows WebView2 sometimes returns the
+// outer-frame left, which shifts DOM-derived rects up by the title bar).
+export const getCurrentInnerPosition = async () => {
+	if (!isTauri()) return null
+	try {
+		const { getCurrentWindow } = await import('@tauri-apps/api/window')
+		return await getCurrentWindow().innerPosition()
+	} catch (e) {
+		console.warn('getCurrentInnerPosition failed', e)
+		return null
+	}
+}
+
+// Subscribe to window moved/resized so callers can keep a cached
+// innerPosition in sync without polling. Returns an unlisten function.
+export const onWindowGeometryChange = async onChange => {
+	if (!isTauri()) return () => {}
+	try {
+		const { getCurrentWindow } = await import('@tauri-apps/api/window')
+		const w = getCurrentWindow()
+		const offMoved = await w.onMoved(onChange)
+		const offResized = await w.onResized(onChange)
+		return () => {
+			offMoved?.()
+			offResized?.()
+		}
+	} catch (e) {
+		console.warn('onWindowGeometryChange failed', e)
+		return () => {}
 	}
 }
 
