@@ -16,6 +16,7 @@ import { createDocsStore } from './docs.js'
 import { getCliArgs, registerDropHandler } from './native.js'
 import { setupPreview } from './preview.js'
 import { createRecentDropdown } from './recent-ui.js'
+import { applyScrollbarSide } from './settings.js'
 import { createTabBar } from './tabs.js'
 import { createFileTree } from './tree.js'
 import { initUI } from './ui.js'
@@ -53,6 +54,7 @@ const killStaleServiceWorker = async () => {
 
 const boot = async () => {
 	await killStaleServiceWorker()
+	applyScrollbarSide() // before createEditor so the scroller mounts on the right side from the start
 	injectCustomThemesCSS()
 
 	// Configure iconify to use local Tabler icons instead of API

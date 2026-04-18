@@ -2,29 +2,25 @@ import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from '@code
 import { EditorView } from '@codemirror/view'
 import { tags as t } from '@lezer/highlight'
 
+// Default editor scrollbar lives on the right (browser/OS default).
+// The "scrollbar on the left" preference is implemented in components.css
+// via `html.editor-scrollbar-left .cm-scroller { direction: rtl; ... }`,
+// which can be toggled at runtime without rebuilding the editor.
 const cmTheme = EditorView.theme({
 	'&': { height: '100%' },
 	'.cm-scroller': {
 		fontFamily: 'Monaspace Argon, ui-monospace, monospace',
 		background: 'var(--bg)',
-		// Flip the scroller to RTL so the vertical scrollbar appears on the left.
-		// Combine with row-reverse so flex children land in the natural left→right
-		// order again (gutter then content), which puts the line-number gutter
-		// immediately to the right of the scrollbar.
-		direction: 'rtl',
-		flexDirection: 'row-reverse',
 	},
-	// Keep all actual text content laid out LTR.
-	'.cm-content': { caretColor: 'var(--accent)', direction: 'ltr' },
+	'.cm-content': { caretColor: 'var(--accent)' },
 	'.cm-gutters': {
 		background: 'transparent',
 		border: 'none',
-		direction: 'ltr',
 		color: 'var(--comment)',
 	},
 	'.cm-gutterElement': { padding: '0 8px 0 4px' },
 	'.cm-activeLineGutter': { color: 'var(--accent)', background: 'transparent' },
-	'.cm-line': { color: 'color-mix(in srgb, var(--text) 85%, var(--bg))', direction: 'ltr' },
+	'.cm-line': { color: 'color-mix(in srgb, var(--text) 85%, var(--bg))' },
 	'.cm-selectionBackground': {
 		background: 'var(--accent-alpha)',
 	},

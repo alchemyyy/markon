@@ -26,6 +26,22 @@
    the persisted width (default 240px). When closed it removes the inline
    property and the column collapses to the var() fallback of 0px. */
 
+/* Optional: scrollbar on the LEFT side of the editor pane. Toggled by the
+   "Editor scrollbar on the left" preference. The RTL flip puts the
+   vertical scrollbar at the left edge; row-reverse keeps the gutter and
+   content in their natural left→right order; the inner LTR overrides
+   keep text rendering normal. */
+html.editor-scrollbar-left .cm-scroller {
+  direction: rtl;
+  flex-direction: row-reverse;
+}
+
+html.editor-scrollbar-left .cm-content,
+html.editor-scrollbar-left .cm-gutters,
+html.editor-scrollbar-left .cm-line {
+  direction: ltr;
+}
+
 /* Tree sidebar */
 #tree-sidebar {
   overflow: hidden;
@@ -331,10 +347,11 @@
   color: var(--comment);
   font-family: "Monaspace Krypton", system-ui, sans-serif;
   font-size: 12px;
-  cursor: pointer;
+  cursor: grab;
   user-select: none;
   position: relative;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  touch-action: none;
 }
 
 .tab:hover {
@@ -388,11 +405,11 @@
 }
 
 .tab.dragging {
-  opacity: 0.5;
-}
-
-.tab.drag-over {
-  box-shadow: inset 2px 0 0 var(--accent);
+  cursor: grabbing;
+  opacity: 0.85;
+  z-index: 10;
+  box-shadow: 0 4px 12px var(--shadow-strong);
+  transition: none;
 }
 
 .tab-new {

@@ -135,6 +135,18 @@ const isLineNumbersEnabled = () => {
 	return raw == null ? true : raw === 'true'
 }
 
+const SCROLLBAR_LEFT_KEY = 'markon-scrollbar-left'
+export const isScrollbarLeft = () => localStorage.getItem(SCROLLBAR_LEFT_KEY) === 'true'
+export const setScrollbarLeft = on => {
+	localStorage.setItem(SCROLLBAR_LEFT_KEY, String(on))
+	document.documentElement.classList.toggle('editor-scrollbar-left', on)
+}
+// Apply the saved choice on boot — call before the editor renders so the
+// scroller doesn't briefly show on the wrong side.
+export const applyScrollbarSide = () => {
+	document.documentElement.classList.toggle('editor-scrollbar-left', isScrollbarLeft())
+}
+
 const makePrefRow = (label, checked, onChange) => {
 	const row = createElement('label', { className: 'settings-pref-row' })
 	const cb = createElement('input', { type: 'checkbox' })
@@ -166,6 +178,8 @@ const createPrefsSection = () => {
 			window.setLineNumbers?.(checked)
 		}),
 	)
+
+	section.appendChild(makePrefRow('Editor scrollbar on the left', isScrollbarLeft(), setScrollbarLeft))
 
 	return section
 }
