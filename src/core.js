@@ -1,4 +1,4 @@
-import { defaultKeymap, indentWithTab } from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { Compartment, EditorState } from '@codemirror/state'
@@ -96,8 +96,12 @@ export const createEditor = async () => {
 		const state = EditorState.create({
 			doc: defaultValue,
 			extensions: [
+				// minDepth controls how many history events we keep before pruning.
+				// CM's default is 100 — way too small. 10k events covers any realistic
+				// editing session and only costs a few MB of metadata at most.
+				history({ minDepth: 10000 }),
 				markdown({ base: markdownLanguage, codeLanguages: languages }),
-				keymap.of([indentWithTab, ...defaultKeymap]),
+				keymap.of([indentWithTab, ...historyKeymap, ...defaultKeymap]),
 				EditorView.lineWrapping,
 				lineNumbersCompartment.of(lineNumbersExt(lineNumbersOnByDefault())),
 				EditorView.updateListener.of(v => {

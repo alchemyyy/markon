@@ -1,3 +1,4 @@
+import { confirmCloseFile } from './confirm-close.js'
 import { openText, readFileAt, saveAs, saveToPath, setCurrentFile } from './native.js'
 import { addRecent } from './recent.js'
 
@@ -137,15 +138,23 @@ export const createDocsStore = ({ editor, showToast, onActiveChange }) => {
 		return doc
 	}
 
-	const close = id => {
+	const close = async id => {
 		const idx = tabs.findIndex(t => t.id === id)
 		if (idx < 0) return
 		const doc = tabs[idx]
 		if (isDirty(doc)) {
-			const ok = confirm(`${doc.name} has unsaved changes. Close anyway?`)
-			if (!ok) return
+			const choice = await confirmCloseFile(doc.name)
+			if (choice === 'cancel') return
+			if (choice === 'save') {
+				const saved = await save(doc.id)
+				if (!saved) return // save failed or user cancelled the Save-As dialog
+			}
+			// 'discard' → fall through and close without saving
 		}
-		tabs.splice(idx, 1)
+		// Re-find the index in case state shifted while awaiting the dialog/save.
+		const finalIdx = tabs.findIndex(t => t.id === id)
+		if (finalIdx < 0) return
+		tabs.splice(finalIdx, 1)
 		dirtyIds.delete(id)
 
 		if (tabs.length === 0) {
@@ -155,7 +164,7 @@ export const createDocsStore = ({ editor, showToast, onActiveChange }) => {
 		}
 
 		if (activeId === id) {
-			const next = tabs[idx] ?? tabs[idx - 1]
+			const next = tabs[finalIdx] ?? tabs[finalIdx - 1]
 			switchTo(next.id)
 		} else {
 			notify()

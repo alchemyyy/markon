@@ -27,6 +27,10 @@
     {
       "identifier": "fs:allow-watch",
       "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-stat",
+      "allow": [{ "path": "**" }]
     }
   ]
 }

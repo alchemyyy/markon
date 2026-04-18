@@ -102,6 +102,136 @@
   background: var(--text-alpha);
 }
 
+.tree-header-btn.off {
+  opacity: 0.4;
+}
+
+/* Unsaved-changes confirmation modal. */
+.confirm-close-dialog {
+  background: var(--bg-alpha);
+  backdrop-filter: blur(16px) saturate(120%);
+  border: 1px solid var(--text-alpha);
+  border-radius: 16px;
+  padding: 24px;
+  color: var(--text);
+  font-family: "Monaspace Krypton", system-ui, sans-serif;
+  min-width: 360px;
+  max-width: 90vw;
+  box-shadow: 0 4px 12px var(--shadow-strong);
+}
+
+.confirm-close-dialog::backdrop {
+  background: color-mix(in srgb, black 40%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.confirm-close-title {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: Bungee, monospace;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+.confirm-close-message {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  margin-bottom: 20px;
+  word-break: break-word;
+}
+
+.confirm-close-message strong {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.confirm-close-actions {
+  display: grid;
+  grid-auto-flow: column;
+  justify-content: end;
+  gap: 8px;
+}
+
+.confirm-close-btn {
+  all: unset;
+  cursor: pointer;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--text-alpha);
+  color: var(--text);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.confirm-close-btn:hover {
+  background: var(--accent-alpha);
+  color: var(--accent);
+}
+
+.confirm-close-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.confirm-close-btn.danger:hover {
+  background: color-mix(in srgb, var(--error) 25%, transparent);
+  color: var(--error);
+}
+
+.confirm-close-btn.primary {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.confirm-close-btn.primary:hover {
+  background: var(--accent);
+  color: var(--bg);
+  filter: brightness(1.1);
+}
+
+/* Sort mode popup (one-of-N selector). */
+.tree-sort-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 160px;
+  background: var(--bg-alpha);
+  backdrop-filter: blur(16px) saturate(120%);
+  border: 1px solid var(--text-alpha);
+  border-radius: 10px;
+  padding: 4px;
+  font-family: "Monaspace Krypton", system-ui, sans-serif;
+  font-size: 13px;
+  display: grid;
+  gap: 2px;
+}
+
+.tree-sort-menu[hidden] {
+  display: none;
+}
+
+.tree-sort-item {
+  all: unset;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.tree-sort-item:hover {
+  background: var(--text-alpha);
+  color: var(--accent);
+}
+
+.tree-sort-item.selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .tree-list {
   overflow: auto;
   padding: 4px 0;
@@ -111,7 +241,7 @@
 
 .tree-row {
   display: grid;
-  grid-template-columns: 16px 16px 1fr;
+  grid-template-columns: auto 16px 1fr;
   align-items: center;
   gap: 4px;
   padding: 3px 8px;
@@ -120,6 +250,19 @@
   border-radius: 6px;
   margin: 0 4px;
   user-select: none;
+}
+
+/* Shared leading slot: dirs render their chevron, files render their age
+   stamp (or the dirty ● override). Right-aligned so chevrons and ages line
+   up right against the icon column for a consistent left edge. */
+.tree-leading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 10px;
+  color: var(--comment);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .tree-row:hover {
@@ -135,26 +278,21 @@
   font-weight: 600;
 }
 
-.tree-row.is-dirty .tree-chevron-spacer::before {
-  content: "●";
-  font-size: 10px;
-  display: block;
-  text-align: center;
-  line-height: 14px;
+/* Dirty marker shares the leading slot — the ● overrides the age text. */
+.tree-row.is-dirty .tree-leading {
   color: var(--warning);
+  font-size: 0; /* hide the timestamp text without collapsing the slot */
 }
 
-.tree-chevron,
+.tree-row.is-dirty .tree-leading::after {
+  content: "●";
+  font-size: 10px;
+}
+
 .tree-icon {
   display: grid;
   place-items: center;
   color: var(--comment);
-}
-
-.tree-chevron-spacer {
-  width: 14px;
-  height: 14px;
-  display: inline-block;
 }
 
 .tree-name {
@@ -522,8 +660,9 @@ button {
   }
 
   &.toggle {
-    color: var(--muted);
-
+    /* Inherit the regular button color (var(--comment)) when unpressed so
+       toggle buttons sit visually with the other toolbar buttons. Pressed
+       state still highlights via --primary. */
     &[aria-pressed="true"] {
       color: var(--primary);
     }

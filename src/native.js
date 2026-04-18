@@ -103,20 +103,24 @@ export const watchPath = async (path, onChange, { recursive = false } = {}) => {
 
 export const readDirEntries = async path => {
 	if (!isTauri() || !path) return []
-	const { readDir } = await import('@tauri-apps/plugin-fs')
+	const { readDir, stat } = await import('@tauri-apps/plugin-fs')
 	try {
 		const entries = await readDir(path)
 		const sep = path.includes('\\') ? '\\' : '/'
-		return entries
-			.map(e => ({
-				name: e.name,
-				path: `${path}${sep}${e.name}`,
-				isDir: e.isDirectory,
-			}))
-			.sort((a, b) => {
-				if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
-				return a.name.localeCompare(b.name)
-			})
+		// Stat each entry to get mtime — readDir() doesn't include it. We do this
+		// for every entry so callers can sort/display by mtime without a second pass.
+		// Fan out via Promise.all so a folder of N entries costs ~one round trip.
+		return await Promise.all(
+			entries.map(async e => {
+				const fullPath = `${path}${sep}${e.name}`
+				let mtimeMs = 0
+				try {
+					const s = await stat(fullPath)
+					mtimeMs = s?.mtime ? s.mtime.getTime() : 0
+				} catch {}
+				return { name: e.name, path: fullPath, isDir: e.isDirectory, mtimeMs }
+			}),
+		)
 	} catch (e) {
 		console.warn('readDirEntries failed', e)
 		return []

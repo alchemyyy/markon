@@ -285,11 +285,11 @@ const ACTIONS_CONFIG = [
 	},
 	{
 		id: 'toggle-editor-sync',
-		label: 'Sync',
-		icon: 'tabler:arrow-autofit-height-filled',
+		label: 'Sync Scroll',
+		icon: 'tabler:arrow-autofit-height',
 		hotkey: 'ctrl+b',
 		gradient: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(147, 51, 234, 0.2))',
-		showInToolbar: false,
+		showInToolbar: true,
 		handler: showToast => {
 			const currentState = localStorage.getItem('editor-sync-enabled') === 'true'
 			const enabled = !currentState
