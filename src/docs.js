@@ -1,12 +1,46 @@
 import { confirmCloseFile } from './confirm-close.js'
-import { openText, readFileAt, saveAs, saveToPath, setCurrentFile } from './native.js'
+import {
+	broadcastTabOffer,
+	closeCurrentWindow,
+	confirmTabAdopted,
+	createTearoffWindow,
+	focusCurrentWindow,
+	getCurrentWindowLabel,
+	isPointOverCurrentWindow,
+	openText,
+	readFileAt,
+	saveAs,
+	saveToPath,
+	setCurrentFile,
+	subscribeTabAdopted,
+	subscribeTabOffer,
+	TEAROFF_PAYLOAD_PREFIX,
+} from './native.js'
 import { addRecent } from './recent.js'
 
-const STORAGE_KEY = 'markon-tabs-v1'
+const BASE_STORAGE_KEY = 'markon-tabs-v1'
 const LEGACY_DB_NAME = 'markon-storage'
 const LEGACY_STORE = 'content'
 const LEGACY_KEY = 'markon-content'
 const PERSIST_DEBOUNCE_MS = 600
+
+// Each window maintains its own tab list. The main window keeps the original
+// `markon-tabs-v1` key for backwards compatibility; tear-off windows namespace
+// under `...__<windowId>` so concurrent windows don't clobber each other.
+const getWindowId = () => {
+	try {
+		return new URLSearchParams(location.search).get('windowId')
+	} catch {
+		return null
+	}
+}
+
+const STORAGE_KEY = (() => {
+	const id = getWindowId()
+	return id ? `${BASE_STORAGE_KEY}__${id}` : BASE_STORAGE_KEY
+})()
+
+const IS_TEAROFF_WINDOW = !!getWindowId()
 
 const loadLegacyIndexedDB = () =>
 	new Promise(resolve => {
@@ -54,6 +88,13 @@ export const createDocsStore = ({ editor, showToast, onActiveChange }) => {
 	let persistTimer = null
 	const subscribers = []
 	const dirtyIds = new Set()
+
+	// Cross-window IPC state. currentLabel is resolved once at init; pending
+	// acks map a tab UUID → resolver callback so multiple tearOff() calls
+	// can be in flight simultaneously without clobbering each other's acks.
+	let currentLabel = null
+	const pendingAcks = new Map()
+	const ADOPT_ACK_TIMEOUT_MS = 300
 
 	const getActive = () => tabs.find(t => t.id === activeId) ?? null
 
@@ -158,7 +199,15 @@ export const createDocsStore = ({ editor, showToast, onActiveChange }) => {
 		dirtyIds.delete(id)
 
 		if (tabs.length === 0) {
-			// Never leave zero tabs — seed a fresh Untitled.
+			// Tear-off windows mirror Chrome — closing the last tab closes the window.
+			// Main window keeps the original invariant: seed a fresh Untitled.
+			if (IS_TEAROFF_WINDOW) {
+				try {
+					localStorage.removeItem(STORAGE_KEY)
+				} catch {}
+				closeCurrentWindow()
+				return
+			}
 			newUntitled()
 			return
 		}
@@ -245,6 +294,135 @@ export const createDocsStore = ({ editor, showToast, onActiveChange }) => {
 		notify()
 	}
 
+	// Remove a doc from the local tab list without any confirmation.
+	// Caller is responsible for already having persisted it elsewhere.
+	const detachLocal = id => {
+		const idx = tabs.findIndex(t => t.id === id)
+		if (idx < 0) return
+		tabs.splice(idx, 1)
+		dirtyIds.delete(id)
+		if (tabs.length === 0) {
+			// Closing the tab left this window empty — mirror the close()
+			// behavior: tear-off windows close, main window seeds Untitled.
+			if (IS_TEAROFF_WINDOW) {
+				try {
+					localStorage.removeItem(STORAGE_KEY)
+				} catch {}
+				closeCurrentWindow()
+				return
+			}
+			newUntitled()
+			return
+		}
+		if (activeId === id) {
+			const next = tabs[idx] ?? tabs[idx - 1]
+			if (next) switchTo(next.id)
+			else notify()
+		} else {
+			notify()
+		}
+	}
+
+	// Accept a doc handed off from another window via the cross-window
+	// tab-transfer channel. Deduplicates by path (same behavior as openPath).
+	const adopt = payload => {
+		if (!payload || typeof payload !== 'object') return
+		if (payload.path) {
+			const existing = tabs.find(t => t.path === payload.path)
+			if (existing) {
+				switchTo(existing.id)
+				focusCurrentWindow()
+				return
+			}
+		}
+		const doc = createDoc(payload)
+		tabs.push(doc)
+		if (isDirty(doc)) dirtyIds.add(doc.id)
+		switchTo(doc.id)
+		focusCurrentWindow()
+	}
+
+	// Detach a doc from this window. Protocol:
+	//   1. Broadcast `tab-offer` with the tab UUID, full doc, source label,
+	//      and drop point (physical px).
+	//   2. Every other window checks its own outer frame; the one the drop
+	//      landed on adopts the doc and emits `tab-adopted` back.
+	//   3. On ACK (within ADOPT_ACK_TIMEOUT_MS), remove the tab locally; if
+	//      that emptied the source and we're a tear-off window, close.
+	//   4. No ACK = no taker, spawn a fresh window seeded with the doc
+	//      (unless that'd leave us empty — main/tear-off both bounce).
+	//
+	// Returns true if the tear-off was handled; false leaves the tab in place.
+	const tearOff = async (id, dropAt) => {
+		const idx = tabs.findIndex(t => t.id === id)
+		if (idx < 0) return false
+
+		const payload = { ...tabs[idx] }
+		const hasDropAt = dropAt && Number.isFinite(dropAt.x) && Number.isFinite(dropAt.y)
+
+		if (hasDropAt && currentLabel) {
+			const adopted = await new Promise(resolve => {
+				const timer = setTimeout(() => {
+					pendingAcks.delete(id)
+					resolve(false)
+				}, ADOPT_ACK_TIMEOUT_MS)
+				pendingAcks.set(id, () => {
+					clearTimeout(timer)
+					resolve(true)
+				})
+				broadcastTabOffer({
+					tabId: id,
+					doc: payload,
+					sourceLabel: currentLabel,
+					dropX: dropAt.x,
+					dropY: dropAt.y,
+				})
+			})
+			if (adopted) {
+				detachLocal(id)
+				return true
+			}
+		}
+
+		// No other window claimed the drop — fall back to a new window. Skip
+		// when that'd leave the source empty (main repopulates Untitled,
+		// tear-off self-replaces, neither is useful).
+		if (tabs.length === 1) return false
+		// Nudge the new window up-left of the cursor so the title bar lands
+		// near the drop point rather than under it.
+		const spawnAt = hasDropAt ? { x: dropAt.x - 60, y: dropAt.y - 20 } : {}
+		const spawned = await createTearoffWindow(payload, spawnAt)
+		if (!spawned) return false
+		detachLocal(id)
+		return true
+	}
+
+	// Cross-window IPC wiring. Resolves the current window label, then
+	// listens for offers (to adopt) and acks (to unblock tearOff waiters).
+	;(async () => {
+		currentLabel = await getCurrentWindowLabel()
+
+		subscribeTabOffer(async offer => {
+			if (!offer || !offer.doc) return
+			// Skip our own broadcast echo.
+			if (offer.sourceLabel && offer.sourceLabel === currentLabel) return
+			const over = await isPointOverCurrentWindow({ x: offer.dropX, y: offer.dropY })
+			if (!over) return
+			adopt(offer.doc)
+			if (offer.sourceLabel) {
+				confirmTabAdopted(offer.sourceLabel, { tabId: offer.tabId, targetLabel: currentLabel })
+			}
+		})
+
+		subscribeTabAdopted(ack => {
+			if (!ack?.tabId) return
+			const resolver = pendingAcks.get(ack.tabId)
+			if (!resolver) return
+			pendingAcks.delete(ack.tabId)
+			resolver()
+		})
+	})()
+
 	const onChange = fn => {
 		subscribers.push(fn)
 		fn({ tabs: [...tabs], activeId })
@@ -258,6 +436,31 @@ export const createDocsStore = ({ editor, showToast, onActiveChange }) => {
 
 	// Boot: restore persisted tabs, or migrate legacy single-doc storage
 	const boot = async () => {
+		// Tear-off windows: if there's a pending handoff payload for this window
+		// id, seed with that doc. The payload is a one-shot — remove it so a
+		// reload of this window falls through to normal persisted-tabs restore.
+		if (IS_TEAROFF_WINDOW) {
+			const id = getWindowId()
+			const payloadKey = TEAROFF_PAYLOAD_PREFIX + id
+			let payload = null
+			try {
+				const raw = localStorage.getItem(payloadKey)
+				if (raw) {
+					payload = JSON.parse(raw)
+					localStorage.removeItem(payloadKey)
+				}
+			} catch (e) {
+				console.warn('bad tearoff payload, ignoring', e)
+			}
+			if (payload) {
+				const doc = createDoc(payload)
+				tabs = [doc]
+				recomputeDirty()
+				switchTo(doc.id)
+				return
+			}
+		}
+
 		let raw = null
 		try {
 			raw = localStorage.getItem(STORAGE_KEY)
@@ -302,7 +505,9 @@ export const createDocsStore = ({ editor, showToast, onActiveChange }) => {
 		saveAs: saveAsDoc,
 		saveAll,
 		reorder,
+		tearOff,
 		onChange,
 		isDirty,
+		isTearoffWindow: () => IS_TEAROFF_WINDOW,
 	}
 }

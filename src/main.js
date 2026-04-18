@@ -99,13 +99,18 @@ const boot = async () => {
 
 	await docs.boot()
 
-	// Restore previously-opened folder (cleared when the user closes the folder panel)
-	const savedFolder = localStorage.getItem('markon-folder')
-	if (savedFolder) await fileTree.open(savedFolder).catch(() => {})
+	// Secondary (tear-off) windows skip folder-restore and CLI-arg open —
+	// those are main-window concerns. The tear-off was seeded from a handoff
+	// payload inside docs.boot() and shouldn't be polluted with other state.
+	if (!docs.isTearoffWindow()) {
+		// Restore previously-opened folder (cleared when the user closes the folder panel)
+		const savedFolder = localStorage.getItem('markon-folder')
+		if (savedFolder) await fileTree.open(savedFolder).catch(() => {})
 
-	// Open any files passed on CLI (`markon foo.md bar.md`) — after boot so they land in tabs
-	const cliFiles = await getCliArgs()
-	for (const p of cliFiles) await docs.openPath(p)
+		// Open any files passed on CLI (`markon foo.md bar.md`) — after boot so they land in tabs
+		const cliFiles = await getCliArgs()
+		for (const p of cliFiles) await docs.openPath(p)
+	}
 
 	// Handle PWA install prompt - setup after UI is initialized
 	window.addEventListener('beforeinstallprompt', event => {

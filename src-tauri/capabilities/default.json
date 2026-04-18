@@ -3,12 +3,22 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": [
-    "main"
+    "main",
+    "tearoff-*"
   ],
   "permissions": [
     "core:default",
     "core:window:allow-set-title",
+    "core:window:allow-set-focus",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-start-dragging",
+    "core:window:allow-outer-position",
+    "core:window:allow-outer-size",
     "core:webview:allow-internal-toggle-devtools",
+    "core:webview:allow-create-webview-window",
+    "core:event:allow-emit",
+    "core:event:allow-listen",
     "dialog:allow-open",
     "dialog:allow-save",
     "cli:default",
