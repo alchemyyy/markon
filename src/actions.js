@@ -1,12 +1,4 @@
-import {
-	applySpell,
-	applyTheme,
-	copySmart,
-	createClickHandler,
-	createElement,
-	downloadText,
-	openFileText,
-} from './utils.js'
+import { applySpell, applyTheme, copySmart, createClickHandler, createElement } from './utils.js'
 
 // Check if PWA is installed (running in standalone mode)
 const isPWAInstalled = () => {
@@ -118,22 +110,6 @@ export const updatePWAInstallBanner = () => {
 const ACTIONS_CONFIG = [
 	// Toolbar actions (ordered from left to right, so rightmost appears last)
 	{
-		id: 'save-to-file',
-		label: 'Save',
-		icon: 'tabler:device-floppy',
-		hotkey: 'ctrl+s',
-		gradient: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(251, 191, 36, 0.2))',
-		showInToolbar: true,
-		handler: async showToast => {
-			const text = await window.getMarkdown?.()
-			if (text) {
-				const name = prompt('filename:', 'document.md') || 'document.md'
-				downloadText(name, text)
-				showToast('saved', 1200, 'tabler:check')
-			}
-		},
-	},
-	{
 		id: 'load-from-file',
 		label: 'Open',
 		icon: 'tabler:folder-open',
@@ -141,11 +117,81 @@ const ACTIONS_CONFIG = [
 		gradient: 'linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(147, 51, 234, 0.2))',
 		showInToolbar: true,
 		handler: async showToast => {
-			const text = await openFileText()
-			if (text) {
-				window.setMarkdown?.(text)
-				showToast('opened', 1200, 'tabler:check')
+			const doc = await window.docs?.openViaDialog()
+			if (doc) showToast(doc.name ? `opened ${doc.name}` : 'opened', 1200, 'tabler:check')
+		},
+	},
+	{
+		id: 'open-folder',
+		label: 'Open Folder',
+		icon: 'tabler:folders',
+		hotkey: 'ctrl+shift+o',
+		gradient: 'linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(147, 51, 234, 0.2))',
+		showInToolbar: true,
+		handler: async showToast => {
+			if (!window.fileTree) {
+				showToast('folder view only in Tauri app', 1500, 'tabler:alert-circle')
+				return
 			}
+			await window.fileTree.openPicker()
+		},
+	},
+	{
+		id: 'save-to-file',
+		label: 'Save',
+		icon: 'tabler:device-floppy',
+		hotkey: 'ctrl+s',
+		gradient: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(251, 191, 36, 0.2))',
+		showInToolbar: true,
+		handler: async showToast => {
+			const doc = await window.docs?.save()
+			if (doc) showToast(`saved ${doc.name}`, 1200, 'tabler:check')
+		},
+	},
+	{
+		id: 'save-as-file',
+		label: 'Save As',
+		icon: 'tabler:device-floppy',
+		hotkey: 'ctrl+shift+s',
+		gradient: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(251, 191, 36, 0.2))',
+		showInToolbar: false,
+		handler: async showToast => {
+			const doc = await window.docs?.saveAs()
+			if (doc) showToast(`saved ${doc.name}`, 1200, 'tabler:check')
+		},
+	},
+	{
+		id: 'save-all-files',
+		label: 'Save All',
+		icon: 'tabler:device-floppy',
+		hotkey: 'ctrl+alt+s',
+		gradient: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(251, 191, 36, 0.2))',
+		showInToolbar: true,
+		handler: async () => {
+			await window.docs?.saveAll()
+		},
+	},
+	{
+		id: 'new-tab',
+		label: 'New Tab',
+		icon: 'tabler:file-plus',
+		hotkey: 'ctrl+n',
+		gradient: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(16, 185, 129, 0.2))',
+		showInToolbar: false,
+		handler: () => {
+			window.docs?.newUntitled()
+		},
+	},
+	{
+		id: 'recent-files',
+		label: 'Recent',
+		icon: 'tabler:history',
+		hotkey: 'ctrl+e',
+		gradient: 'linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(147, 51, 234, 0.2))',
+		showInToolbar: true,
+		handler: () => {
+			const btn = document.getElementById('recent-files')
+			if (btn && window.recentDropdown) window.recentDropdown.toggle(btn)
 		},
 	},
 	{
@@ -321,6 +367,29 @@ export const HOTKEYS = ACTIONS_CONFIG.filter(a => a.hotkey)
 	.map(a => [a.hotkey, a.label, a.id])
 	.concat([['ctrl+p', 'Toggle preview', 'preview-toggle']])
 
+// Buttons that the user can hide from the toolbar via the Settings panel.
+// Each entry: id of the button, localStorage key holding the visibility flag,
+// and the *default* (visible-or-not) when the key is unset.
+export const HIDEABLE_TOOLBAR_BUTTONS = [{ id: 'toggle-theme', key: 'markon-show-theme-btn', defaultOn: false }]
+
+const isToolbarBtnVisible = pref => {
+	const raw = localStorage.getItem(pref.key)
+	return raw == null ? pref.defaultOn : raw === 'true'
+}
+
+export const setToolbarBtnVisible = (id, visible) => {
+	const pref = HIDEABLE_TOOLBAR_BUTTONS.find(p => p.id === id)
+	if (!pref) return
+	localStorage.setItem(pref.key, String(visible))
+	const btn = document.getElementById(id)
+	if (btn) btn.style.display = visible ? '' : 'none'
+}
+
+export const isToolbarBtnVisibleById = id => {
+	const pref = HIDEABLE_TOOLBAR_BUTTONS.find(p => p.id === id)
+	return pref ? isToolbarBtnVisible(pref) : true
+}
+
 // Create all buttons
 export const createButtons = (showToast, settingsDialog) => {
 	const actions = document.getElementById('actions')
@@ -334,6 +403,12 @@ export const createButtons = (showToast, settingsDialog) => {
 
 		actions.appendChild(btn)
 	})
+
+	// Apply persisted visibility for buttons the user can hide.
+	for (const pref of HIDEABLE_TOOLBAR_BUTTONS) {
+		const btn = document.getElementById(pref.id)
+		if (btn && !isToolbarBtnVisible(pref)) btn.style.display = 'none'
+	}
 
 	// Initialize PWA UI (always check, even if installed)
 	updatePWAUI()

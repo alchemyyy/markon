@@ -337,6 +337,54 @@ html[data-theme="github"][data-mode="light"] {
 	--error: #d73a49;
 }
 
+html[data-theme="github-modified"][data-mode="dark"] {
+	--bg: #0d1117;
+	--bg-light: #161b22;
+	--text: #e6edf3;
+	--brand: #f85149;
+	--accent: #58a6ff;
+	--primary: #d8b4fe;
+	--secondary: #7ee787;
+	--comment: #7d8590;
+	--meta: #ffa657;
+	--operator: #7cabda;
+	--keyword: #ff7b72;
+	--regex: #ffa657;
+	--property: #79c0ff;
+	--string: #a5d6ff;
+	--literal: #d2a8ff;
+	--hint: #7ee787;
+
+	--success: #7ee787;
+	--warning: #ffa657;
+	--info: #58a6ff;
+	--error: #f85149;
+}
+
+html[data-theme="github-modified"][data-mode="light"] {
+	--bg: #ffffff;
+	--bg-light: #f6f8fa;
+	--text: #24292f;
+	--brand: #d73a49;
+	--accent: #0969da;
+	--primary: #8b5cf6;
+	--secondary: #28a745;
+	--comment: #6a737d;
+	--meta: #e36209;
+	--operator: #2b4e8a;
+	--keyword: #d73a49;
+	--regex: #e36209;
+	--property: #0969da;
+	--string: #032f62;
+	--literal: #6f42c1;
+	--hint: #28a745;
+
+	--success: #28a745;
+	--warning: #e36209;
+	--info: #0969da;
+	--error: #d73a49;
+}
+
 html[data-theme="one-dark"][data-mode="dark"] {
 	--bg: #282c34;
 	--bg-light: #21252b;

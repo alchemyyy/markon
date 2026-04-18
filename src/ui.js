@@ -1,11 +1,11 @@
 import { createButtons } from './actions.js'
-import { createSettingsDialog } from './settings.js'
-import { observeTheme } from './syntax.js'
 import { setupHotkeys } from './hotkeys.js'
 import { createPreviewManager, createResizeHandler } from './resize.js'
-import createToolbar from './toolbar.js'
-import { createTOC } from './toc.js'
+import { createSettingsDialog } from './settings.js'
 import { createScrollSync } from './sync.js'
+import { observeTheme } from './syntax.js'
+import { createTOC } from './toc.js'
+import createToolbar from './toolbar.js'
 import { applyTheme, createPointerHandler, createToast, getPrefTheme } from './utils.js'
 
 // Initialize UI components
@@ -23,6 +23,40 @@ export const initUI = async ({ getMarkdown, setMarkdown, scrollToLine, view }) =
 
 	// Setup all buttons (including settings)
 	createButtons(showToast, settingsDialog)
+
+	// Tooltip clip avoidance: each toolbar button's tooltip is centered under
+	// the button via translateX(-50%); the leftmost buttons would push their
+	// tooltip off the left edge of the screen. Compute the would-be position
+	// from the button rect + tip offsetWidth (transform-independent), and
+	// shift just enough to keep an 8px margin to either edge.
+	//
+	// Re-runs on every hover (delegated, bubbling event) so the shift adapts
+	// to window resize and to moving directly between buttons without ever
+	// leaving the actions container.
+	const adjustTooltip = btn => {
+		const tip = btn.querySelector(':scope > span')
+		if (!tip) return
+		const btnRect = btn.getBoundingClientRect()
+		const btnCenter = btnRect.left + btnRect.width / 2
+		const tipWidth = tip.offsetWidth
+		const naturalLeft = btnCenter - tipWidth / 2
+		const naturalRight = btnCenter + tipWidth / 2
+		const margin = 8
+		let shift = 0
+		if (naturalLeft < margin) shift = margin - naturalLeft
+		else if (naturalRight > window.innerWidth - margin) shift = window.innerWidth - margin - naturalRight
+		tip.style.transform = shift !== 0 ? `translateX(calc(-50% + ${shift}px)) translateY(0)` : ''
+	}
+	const actionsContainer = document.getElementById('actions')
+	if (actionsContainer) {
+		// `mouseover` bubbles, unlike `mouseenter`/`pointerenter`, so a single
+		// listener handles all buttons including ones added later, and fires
+		// reliably when moving directly between adjacent buttons.
+		actionsContainer.addEventListener('mouseover', e => {
+			const btn = e.target.closest('button')
+			if (btn && actionsContainer.contains(btn)) adjustTooltip(btn)
+		})
+	}
 
 	// Setup hotkeys
 	setupHotkeys(settingsDialog)
@@ -77,5 +111,5 @@ export const initUI = async ({ getMarkdown, setMarkdown, scrollToLine, view }) =
 	}
 
 	// Return preview HTML element for preview module
-	return { previewHtml: document.getElementById('previewhtml') }
+	return { previewHtml: document.getElementById('previewhtml'), showToast }
 }

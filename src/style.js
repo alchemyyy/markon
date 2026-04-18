@@ -7,10 +7,24 @@ const cmTheme = EditorView.theme({
 	'.cm-scroller': {
 		fontFamily: 'Monaspace Argon, ui-monospace, monospace',
 		background: 'var(--bg)',
+		// Flip the scroller to RTL so the vertical scrollbar appears on the left.
+		// Combine with row-reverse so flex children land in the natural left→right
+		// order again (gutter then content), which puts the line-number gutter
+		// immediately to the right of the scrollbar.
+		direction: 'rtl',
+		flexDirection: 'row-reverse',
 	},
-	'.cm-content': { caretColor: 'var(--accent)' },
-	'.cm-gutters': { background: 'transparent', border: 'none' },
-	'.cm-line': { color: 'var(--text)' },
+	// Keep all actual text content laid out LTR.
+	'.cm-content': { caretColor: 'var(--accent)', direction: 'ltr' },
+	'.cm-gutters': {
+		background: 'transparent',
+		border: 'none',
+		direction: 'ltr',
+		color: 'var(--comment)',
+	},
+	'.cm-gutterElement': { padding: '0 8px 0 4px' },
+	'.cm-activeLineGutter': { color: 'var(--accent)', background: 'transparent' },
+	'.cm-line': { color: 'color-mix(in srgb, var(--text) 85%, var(--bg))', direction: 'ltr' },
 	'.cm-selectionBackground': {
 		background: 'var(--accent-alpha)',
 	},
@@ -81,7 +95,6 @@ const createHighlightStyle = groups => groups.flatMap(([color, ...tags]) => tags
 
 // Markdown-specific styles
 const sharedHeadings = {
-	textShadow: '0 0 14px currentColor',
 	fontWeight: 'bold',
 }
 

@@ -1,20 +1,26 @@
 import { defaultKeymap, indentWithTab } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
-import { EditorState } from '@codemirror/state'
-import { EditorView, keymap } from '@codemirror/view'
+import { Compartment, EditorState } from '@codemirror/state'
+import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import sampleMd from '../sample.md?raw'
-import { editorThemeExtensions } from './style.js'
-import { createStorage } from './storage.js'
 import { createProfiler } from './profiler.js'
+import { editorThemeExtensions } from './style.js'
 
 const readDefaultMarkdown = async () => sampleMd || '# markon\n\nStart typing...'
+
+export const LINE_NUMBERS_KEY = 'markon-line-numbers'
+const lineNumbersOnByDefault = () => {
+	const raw = localStorage.getItem(LINE_NUMBERS_KEY)
+	return raw == null ? true : raw === 'true'
+}
+const lineNumbersExt = enabled => (enabled ? lineNumbers() : [])
 
 export const createEditor = async () => {
 	let view = null
 	const subscribers = []
-	let storage = null
 	const profiler = createProfiler()
+	const lineNumbersCompartment = new Compartment()
 
 	const mountIfNeeded = () => {
 		const html = document.documentElement
@@ -35,6 +41,7 @@ export const createEditor = async () => {
 				markdown({ base: markdownLanguage, codeLanguages: languages }),
 				keymap.of([indentWithTab, ...defaultKeymap]),
 				EditorView.lineWrapping,
+				lineNumbersCompartment.of(lineNumbersExt(lineNumbersOnByDefault())),
 				EditorView.updateListener.of(v => {
 					if (v.docChanged) {
 						profiler.markInputStart()
@@ -48,23 +55,15 @@ export const createEditor = async () => {
 		mountIfNeeded()
 	}
 
-	// Initialize storage and load content
+	const setLineNumbers = enabled => {
+		if (!view) return
+		view.dispatch({ effects: lineNumbersCompartment.reconfigure(lineNumbersExt(enabled)) })
+		localStorage.setItem(LINE_NUMBERS_KEY, String(enabled))
+	}
+
+	// Boot with sample content; docs.js owns all persistence/state.
 	const initialContent = await readDefaultMarkdown()
 	make(initialContent)
-
-	// Initialize storage AFTER editor is created to avoid triggering on initial load
-	storage = createStorage({
-		onMarkdownUpdated: fn => subscribers.push(fn),
-		initialContent: initialContent,
-	})
-
-	// Load stored content from worker
-	const storedContent = storage.load()
-	if (storedContent) {
-		// Content will be set via worker message
-	} else {
-		// No stored content, use initial content
-	}
 
 	const getMarkdown = () => view.state.doc.toString()
 	const setMarkdown = markdown => {
@@ -81,16 +80,16 @@ export const createEditor = async () => {
 		if (!view || lineNumber < 1) return
 		const line = view.state.doc.line(Math.min(lineNumber, view.state.doc.lines))
 		view.dispatch({
-			effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: 20 })
+			effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: 20 }),
 		})
 	}
 
 	// Expose global functions for worker
 	window.getMarkdown = getMarkdown
 	window.setMarkdown = setMarkdown
+	window.setLineNumbers = setLineNumbers
 
-	// Expose storage cleanup and profiler
-	const cleanup = () => storage?.cleanup()
+	const cleanup = () => {}
 
-	return { getMarkdown, setMarkdown, onMarkdownUpdated, cleanup, profiler, scrollToLine, view }
+	return { getMarkdown, setMarkdown, onMarkdownUpdated, cleanup, profiler, scrollToLine, view, setLineNumbers }
 }

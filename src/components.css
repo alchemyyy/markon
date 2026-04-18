@@ -3,16 +3,379 @@
 /* Main layout wrapper */
 #wrap {
   position: relative;
-  inset: 0;
+  flex: 1 1 auto;
   display: grid;
-  grid-template-columns: 1fr 10px 400px;
+  grid-template-columns: var(--tree-w, 0px) 1fr 10px 400px;
   background: var(--bg);
   min-width: 0;
   width: 100%;
   max-width: none;
-  height: 100dvh;
+  min-height: 0;
   overflow: hidden;
   will-change: grid-template-columns;
+}
+
+/* Tab bar sits as its own row in body's flex column (between #bar and #wrap). */
+#tab-bar-slot {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+/* When the tree is open, tree.js sets --tree-w inline on <html> from
+   the persisted width (default 240px). When closed it removes the inline
+   property and the column collapses to the var() fallback of 0px. */
+
+/* Tree sidebar */
+#tree-sidebar {
+  overflow: hidden;
+  background: var(--bg-light);
+  border-right: 1px solid var(--text-alpha);
+  min-width: 0;
+}
+
+#tree-panel {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+  overflow: hidden;
+}
+
+.tree-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -12px;
+  width: 24px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.tree-resize-handle:hover,
+.tree-resize-handle.active {
+  background: var(--accent-alpha);
+}
+
+.tree-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--text-alpha);
+  font-family: "Monaspace Krypton", system-ui, sans-serif;
+  font-size: 12px;
+  color: var(--secondary);
+}
+
+.tree-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-header-actions {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 2px;
+}
+
+.tree-header-btn {
+  all: unset;
+  cursor: pointer;
+  color: var(--comment);
+  padding: 4px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.tree-header-btn:hover {
+  color: var(--primary);
+  background: var(--text-alpha);
+}
+
+.tree-list {
+  overflow: auto;
+  padding: 4px 0;
+  font-family: "Monaspace Krypton", system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.tree-row {
+  display: grid;
+  grid-template-columns: 16px 16px 1fr;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  color: var(--text);
+  border-radius: 6px;
+  margin: 0 4px;
+  user-select: none;
+}
+
+.tree-row:hover {
+  background: var(--text-alpha);
+}
+
+.tree-row.is-open {
+  color: var(--accent);
+}
+
+.tree-row.is-dirty {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.tree-row.is-dirty .tree-chevron-spacer::before {
+  content: "●";
+  font-size: 10px;
+  display: block;
+  text-align: center;
+  line-height: 14px;
+  color: var(--warning);
+}
+
+.tree-chevron,
+.tree-icon {
+  display: grid;
+  place-items: center;
+  color: var(--comment);
+}
+
+.tree-chevron-spacer {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+}
+
+.tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Tab bar */
+#tab-bar {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  background: var(--bg-light);
+  border-bottom: 1px solid var(--text-alpha);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  min-height: 34px;
+}
+
+#tab-bar.hidden {
+  display: none;
+}
+
+.tab {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  min-width: 120px;
+  max-width: 200px;
+  background: transparent;
+  border-right: 1px solid var(--text-alpha);
+  color: var(--comment);
+  font-family: "Monaspace Krypton", system-ui, sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tab:hover {
+  background: var(--text-alpha);
+  color: var(--text);
+}
+
+.tab.active {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.tab.dirty .tab-label::after {
+  content: " •";
+  color: var(--warning);
+}
+
+.tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-close {
+  all: unset;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--comment);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.tab-close:hover {
+  background: var(--text-alpha);
+  opacity: 1;
+  color: var(--error);
+}
+
+.tab.dragging {
+  opacity: 0.5;
+}
+
+.tab.drag-over {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.tab-new {
+  all: unset;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  color: var(--comment);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tab-new:hover {
+  background: var(--text-alpha);
+  color: var(--accent);
+}
+
+/* Recent files dropdown */
+#recent-dropdown {
+  position: fixed;
+  z-index: 200;
+  min-width: 320px;
+  max-width: 480px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--bg-alpha);
+  backdrop-filter: blur(16px) saturate(120%);
+  border: 1px solid var(--text-alpha);
+  border-radius: 12px;
+  padding: 6px;
+  font-family: "Monaspace Krypton", system-ui, sans-serif;
+  font-size: 13px;
+}
+
+#recent-dropdown[hidden] {
+  display: none;
+}
+
+.recent-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  padding: 4px 8px 6px;
+  border-bottom: 1px solid var(--text-alpha);
+  color: var(--secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.recent-clear {
+  all: unset;
+  cursor: pointer;
+  color: var(--comment);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.recent-clear:hover {
+  color: var(--error);
+  background: var(--text-alpha);
+}
+
+.recent-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.recent-row:hover {
+  background: var(--text-alpha);
+}
+
+.recent-name {
+  font-weight: 600;
+}
+
+.recent-dir {
+  color: var(--comment);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.recent-remove {
+  all: unset;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--comment);
+  opacity: 0.5;
+  padding: 2px;
+  border-radius: 4px;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.recent-row:hover .recent-remove {
+  opacity: 1;
+}
+
+.recent-remove:hover {
+  color: var(--error);
+  background: var(--text-alpha);
+}
+
+.recent-empty {
+  padding: 16px 8px;
+  color: var(--comment);
+  text-align: center;
+  font-style: italic;
 }
 
 /* Editor container */
@@ -28,22 +391,18 @@
 
 /* ===== TOP BAR COMPONENTS ===== */
 
-/* Top bar */
+/* Top bar — fixed in document flow; content sits below it. */
 #bar {
-  position: fixed;
-  inset-inline: 0;
-  top: 0;
+  flex: 0 0 var(--bar-h);
+  width: 100%;
   height: var(--bar-h);
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: 1fr auto;
   align-items: center;
   gap: 12px;
-  padding: 0 var(--pad);
-  backdrop-filter: blur(10px) saturate(120%);
+  padding: 0 16px 0 0;
   background: var(--text-alpha);
-  box-shadow: 0 0 30px var(--bg);
   z-index: 100;
-  transition: top 0.3s ease;
 }
 
 /* Brand logo */
@@ -56,14 +415,13 @@
   grid-auto-flow: column;
   place-items: center;
   gap: 12px;
-  text-shadow: 0 0 14px var(--brand);
+  padding-right: 16px;
   background: linear-gradient(45deg, var(--hint), var(--brand));
   background-clip: text;
   color: transparent;
 
   img {
     opacity: 0.4;
-    margin-left: 6px;
     mix-blend-mode: overlay;
   }
 }
@@ -81,15 +439,9 @@
   display: grid;
   grid-auto-flow: column;
   gap: 8px;
-  justify-content: end;
+  justify-content: start;
   min-width: 0;
   overflow: visible;
-  padding-right: 46px;
-  transition: padding-right 0.5s ease;
-}
-
-#bar.open #actions {
-  padding-right: 0;
 }
 
 /* Bar pull indicator */
@@ -127,17 +479,6 @@ button {
   position: relative;
   overflow: visible;
 
-  &::before {
-    content: "";
-    z-index: 1;
-    width: 14px;
-    height: 14px;
-    background: currentColor;
-    position: absolute;
-    margin-left: 9px;
-    filter: blur(8px) saturate(0.6);
-  }
-
   span {
     position: absolute;
     top: 100%;
@@ -149,7 +490,6 @@ button {
     transition: all 0.2s ease;
     font-weight: 600;
     font-size: 0.75rem;
-    text-shadow: 0 0 8px currentColor;
     color: inherit;
     z-index: 10;
     padding: 4px 8px;
@@ -270,8 +610,8 @@ button {
   border: 0;
   outline: none;
   padding: 16px;
-  background: var(--bg-light);
-  color: var(--text);
+  background: var(--bg);
+  color: color-mix(in srgb, var(--text) 85%, var(--bg));
   font-family: system-ui, Helvetica, Arial, sans-serif;
   font-size: 15px;
   line-height: 1.5;
@@ -319,7 +659,6 @@ button {
   input[type="checkbox"]:checked {
     background: var(--accent);
     border-color: var(--accent);
-    box-shadow: 0 0 8px var(--accent-alpha);
   }
 
   input[type="checkbox"]:checked::before {
@@ -336,11 +675,6 @@ button {
 
   input[type="checkbox"]:hover {
     border-color: var(--accent);
-    box-shadow: 0 0 4px var(--accent-alpha);
-  }
-
-  input[type="checkbox"]:checked:hover {
-    box-shadow: 0 0 12px var(--accent-alpha);
   }
 
   blockquote {
@@ -380,6 +714,13 @@ button {
   code {
     padding: 0 0.3em;
     border-radius: 6px;
+    background: color-mix(in srgb, color-mix(in srgb, var(--text) 30%, var(--bg)) 60%, transparent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, color-mix(in srgb, var(--text) 30%, var(--bg)) 60%, transparent);
+  }
+
+  pre code {
+    background: transparent;
+    box-shadow: none;
   }
 
   kbd {
@@ -600,7 +941,6 @@ button {
     transition: all 0.2s ease;
     font-weight: 600;
     font-size: 0.75rem;
-    text-shadow: 0 0 8px currentColor;
     color: inherit;
     z-index: 10;
     padding: 4px 8px;

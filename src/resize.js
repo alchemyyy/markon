@@ -7,11 +7,15 @@ const applySnap = (width, maxWidth) =>
 
 const setPreviewWidth = (width, wrap) => {
 	const finalWidth = Math.max(width, 0)
-	wrap.style.gridTemplateColumns = `1fr 14px ${finalWidth}px`
+	// Tree column width is owned by the --tree-w CSS variable (toggled by html.tree-open).
+	wrap.style.gridTemplateColumns = `var(--tree-w, 0px) 1fr 14px ${finalWidth}px`
 }
 
 export const createPreviewManager = wrap => {
-	let _width = 300
+	// Default split: 60% editor, 40% preview (of the editor+split+preview area).
+	const splitGap = 14
+	const initialWrapW = wrap.getBoundingClientRect().width || window.innerWidth
+	let _width = Math.max(0, Math.round((initialWrapW - splitGap) * 0.4))
 	const previewToggleIcon = document.getElementById('preview-toggle')
 
 	// Wrap iconify-icon in a button container (like toolbar buttons)

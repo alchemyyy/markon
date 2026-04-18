@@ -74,6 +74,32 @@
   padding-bottom: 4px;
 }
 
+.settings-pref-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-alpha);
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.settings-pref-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.settings-pref-row:hover {
+  background: var(--accent-alpha);
+}
+
 /* Shortcuts */
 .settings-shortcuts {
   display: grid;
@@ -237,7 +263,6 @@
       transform 0.2s ease 0.1s;
     font-weight: 600;
     font-size: 0.75rem;
-    text-shadow: 0 0 8px currentColor;
     color: var(--text);
     z-index: 10000;
     padding: 4px 8px;

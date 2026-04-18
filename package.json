@@ -16,12 +16,19 @@
     "preview": "vite preview",
     "check": "biome check .",
     "fix": "biome check --write .",
-    "fmt": "biome format --write ."
+    "fmt": "biome format --write .",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.4",
+    "@tauri-apps/cli": "^2.10.1",
     "vite": "^7.1.11",
-    "vite-plugin-pwa": "^1.1.0"
+    "vite-plugin-pwa": "^1.2.0"
+  },
+  "overrides": {
+    "serialize-javascript": "^7.0.5"
   },
   "dependencies": {
     "@codemirror/commands": "^6.6.2",
@@ -35,6 +42,10 @@
     "@fontsource/monaspace-krypton": "^5.2.5",
     "@iconify-json/tabler": "^1.2.23",
     "@lezer/highlight": "^1.2.0",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-cli": "^2.4.1",
+    "@tauri-apps/plugin-dialog": "^2.7.0",
+    "@tauri-apps/plugin-fs": "^2.5.0",
     "highlight.js": "^11.9.0",
     "iconify-icon": "3.0.0",
     "marked": "^16.1.2",

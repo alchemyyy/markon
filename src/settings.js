@@ -1,18 +1,23 @@
+import pkg from '../package.json'
 import {
+	getActionHandlers,
+	HIDEABLE_TOOLBAR_BUTTONS,
+	HOTKEYS,
+	isToolbarBtnVisibleById,
+	SETTINGS_ACTIONS,
+	setToolbarBtnVisible,
+} from './actions.js'
+import { openCSS, saveAs } from './native.js'
+import {
+	applyTheme,
+	clearCustomThemesCSS,
+	copySmart,
 	createClickHandler,
 	createElement,
-	applyTheme,
-	getPrefTheme,
 	extractThemesFromCSS,
+	getPrefTheme,
 	saveCustomThemesCSS,
-	clearCustomThemesCSS,
-	openFileCSS,
-	downloadText,
-	copySmart,
-	openFileText,
 } from './utils.js'
-import { getActionHandlers, SETTINGS_ACTIONS, HOTKEYS } from './actions.js'
-import pkg from '../package.json'
 import './settings.css'
 
 export const createSettingsDialog = showToast => {
@@ -27,10 +32,11 @@ export const createSettingsDialog = showToast => {
 
 	const content = createElement('div', { className: 'settings-content' })
 
+	const prefsSection = createPrefsSection()
 	const themesSection = createThemesSection()
 	const actionsSection = createActionsSection(showToast)
 
-	content.append(themesSection, actionsSection)
+	content.append(prefsSection, themesSection, actionsSection)
 
 	const footer = createElement('div', { className: 'settings-footer' })
 	const heart = createElement('span', {
@@ -116,6 +122,52 @@ export const createSettingsDialog = showToast => {
 	})
 
 	return { show, hide }
+}
+
+// Preferences section: per-button toolbar visibility toggles + editor knobs.
+const PREF_LABELS = {
+	'toggle-theme': 'Show light/dark mode toggle in toolbar',
+}
+
+const LINE_NUMBERS_KEY = 'markon-line-numbers'
+const isLineNumbersEnabled = () => {
+	const raw = localStorage.getItem(LINE_NUMBERS_KEY)
+	return raw == null ? true : raw === 'true'
+}
+
+const makePrefRow = (label, checked, onChange) => {
+	const row = createElement('label', { className: 'settings-pref-row' })
+	const cb = createElement('input', { type: 'checkbox' })
+	cb.checked = checked
+	cb.addEventListener('change', () => onChange(cb.checked))
+	const labelEl = createElement('span', { className: 'settings-pref-label', textContent: label })
+	row.append(cb, labelEl)
+	return row
+}
+
+const createPrefsSection = () => {
+	const section = createElement('div', { className: 'settings-section' })
+	const title = createElement('h3', {
+		className: 'settings-section-title',
+		textContent: 'Preferences',
+	})
+	section.appendChild(title)
+
+	for (const pref of HIDEABLE_TOOLBAR_BUTTONS) {
+		section.appendChild(
+			makePrefRow(PREF_LABELS[pref.id] ?? pref.id, isToolbarBtnVisibleById(pref.id), checked =>
+				setToolbarBtnVisible(pref.id, checked),
+			),
+		)
+	}
+
+	section.appendChild(
+		makePrefRow('Show line number gutter in editor', isLineNumbersEnabled(), checked => {
+			window.setLineNumbers?.(checked)
+		}),
+	)
+
+	return section
 }
 
 // Create unified actions and shortcuts section
@@ -274,19 +326,15 @@ const createThemesSection = () => {
 
 	// Event handlers
 	downloadBtn.addEventListener('click', async () => {
-		const { downloadText } = await import('./utils.js')
-
-		// Fetch the original themes.css file directly from GitHub
 		const response = await fetch('https://raw.githubusercontent.com/getmarkon/markon/refs/heads/master/src/themes.css')
 		const cssToDownload = await response.text()
-		downloadText('themes.css', cssToDownload)
+		await saveAs(cssToDownload, 'themes.css')
 	})
 
 	uploadBtn.addEventListener('click', async () => {
-		const cssText = await openFileCSS()
-		if (cssText) {
-			saveCustomThemesCSS(cssText)
-			// Refresh the settings dialog to show new themes
+		const result = await openCSS()
+		if (result?.content) {
+			saveCustomThemesCSS(result.content)
 			location.reload()
 		}
 	})

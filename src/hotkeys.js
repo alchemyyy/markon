@@ -1,5 +1,5 @@
-import { HOTKEYS } from './settings.js'
 import { getActionHandlers } from './actions.js'
+import { HOTKEYS } from './settings.js'
 import { $ } from './utils.js'
 
 // Key event handler
@@ -10,13 +10,13 @@ export const createKeyHandler = settingsDialog => e => {
 
 	const key = e.key.toLowerCase()
 	const hasCtrl = e.ctrlKey || e.metaKey
+	const hasAlt = e.altKey
 	const hasShift = e.shiftKey
 
-	// Special keys handled by regular hotkey system
-
-	// Build modifier string
+	// Build modifier string (ctrl → alt → shift, matches HOTKEYS format)
 	let modifierString = ''
 	if (hasCtrl) modifierString += 'ctrl+'
+	if (hasAlt) modifierString += 'alt+'
 	if (hasShift) modifierString += 'shift+'
 	const fullKey = modifierString + key
 
@@ -38,17 +38,15 @@ export const createKeyHandler = settingsDialog => e => {
 			return
 		}
 
-		// Special handling for toggle-editor-sync (button may not exist in DOM)
-		if (targetId === 'toggle-editor-sync') {
-			const handlers = getActionHandlers()
-			const handler = handlers[targetId]
-			if (handler && window.showToast) {
-				handler(window.showToast)
-			}
+		// Button present? click it. Otherwise invoke handler directly
+		// (some actions like save-as / toggle-editor-sync live outside the toolbar).
+		const el = $(targetId)
+		if (el) {
+			el.click()
 			return
 		}
-
-		$(targetId)?.click()
+		const handler = getActionHandlers()[targetId]
+		if (handler && window.showToast) handler(window.showToast)
 	}
 }
 

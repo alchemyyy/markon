@@ -35,7 +35,6 @@
         top: 8px;
         left: 16px;
         z-index: -1;
-        filter: blur(10em);
       }
 
       html.ready #splash {
@@ -92,14 +91,16 @@
       </svg>
     </div>
     <div id="bar">
+      <div id="actions"></div>
       <div id="brand">
         <img src="/wordmark-bw.png" height="30" alt="" />
       </div>
-      <div id="actions"></div>
     </div>
     <iconify-icon id="bar-pull" icon="tabler:chevrons-down" width="48">
     </iconify-icon>
+    <div id="tab-bar-slot"></div>
     <div id="wrap">
+      <div id="tree-sidebar"></div>
       <div id="editor"></div>
       <div id="split" aria-label="Resize">
         <iconify-icon

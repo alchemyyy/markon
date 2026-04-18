@@ -10,13 +10,49 @@ import tablerIcons from '@iconify-json/tabler/icons.json' with { type: 'json' }
 import './style.css'
 import './components.css'
 import './themes.css'
+import { updatePWAUI } from './actions.js'
 import { createEditor } from './core.js'
+import { createDocsStore } from './docs.js'
+import { getCliArgs, registerDropHandler } from './native.js'
 import { setupPreview } from './preview.js'
+import { createRecentDropdown } from './recent-ui.js'
+import { createTabBar } from './tabs.js'
+import { createFileTree } from './tree.js'
 import { initUI } from './ui.js'
 import { injectCustomThemesCSS } from './utils.js'
-import { updatePWAUI } from './actions.js'
+
+// One-shot kill switch: nuke any service worker + caches we may have registered
+// in earlier dev sessions. Runs before anything else so a stale SW can't keep
+// serving an out-of-date index.html (the bug that pinned the tab bar to the
+// editor's column width even after the HTML structure changed).
+const killStaleServiceWorker = async () => {
+	try {
+		if ('serviceWorker' in navigator) {
+			const regs = await navigator.serviceWorker.getRegistrations()
+			let killed = false
+			for (const r of regs) {
+				await r.unregister()
+				killed = true
+			}
+			if ('caches' in window) {
+				const keys = await caches.keys()
+				for (const k of keys) await caches.delete(k)
+			}
+			// If we just unregistered something, the page is still being served by
+			// the dead SW — force one fresh fetch from the server.
+			if (killed) {
+				location.reload()
+				// stop boot; the reload will re-enter
+				return new Promise(() => {})
+			}
+		}
+	} catch (e) {
+		console.warn('SW cleanup failed', e)
+	}
+}
 
 const boot = async () => {
+	await killStaleServiceWorker()
 	injectCustomThemesCSS()
 
 	// Configure iconify to use local Tabler icons instead of API
@@ -37,8 +73,37 @@ const boot = async () => {
 	document.addEventListener('DOMContentLoaded', addTablerIcons)
 
 	const { getMarkdown, setMarkdown, onMarkdownUpdated, cleanup, profiler, scrollToLine, view } = await createEditor()
-	const { previewHtml } = await initUI({ getMarkdown, setMarkdown, scrollToLine, view })
+	const { previewHtml, showToast } = await initUI({ getMarkdown, setMarkdown, scrollToLine, view })
 	setupPreview({ getMarkdown, onMarkdownUpdated, previewHtml, profiler })
+
+	// Documents / tabs / tree / recent files
+	const docs = createDocsStore({
+		editor: {
+			getContent: getMarkdown,
+			setContent: setMarkdown,
+			onContentChange: onMarkdownUpdated,
+		},
+		showToast,
+	})
+	window.docs = docs
+
+	createTabBar({ docs, container: document.getElementById('tab-bar-slot') })
+
+	const fileTree = createFileTree({ docs, container: document.getElementById('tree-sidebar'), showToast })
+	window.fileTree = fileTree
+
+	const recentDropdown = createRecentDropdown({ docs, showToast })
+	window.recentDropdown = recentDropdown
+
+	await docs.boot()
+
+	// Restore previously-opened folder (cleared when the user closes the folder panel)
+	const savedFolder = localStorage.getItem('markon-folder')
+	if (savedFolder) await fileTree.open(savedFolder).catch(() => {})
+
+	// Open any files passed on CLI (`markon foo.md bar.md`) — after boot so they land in tabs
+	const cliFiles = await getCliArgs()
+	for (const p of cliFiles) await docs.openPath(p)
 
 	// Handle PWA install prompt - setup after UI is initialized
 	window.addEventListener('beforeinstallprompt', event => {
@@ -64,6 +129,16 @@ const boot = async () => {
 
 	// Expose profiler globally for console inspection
 	window.__MARKON_PERF__ = profiler
+
+	// Drag-drop open: each dropped file becomes (or activates) its own tab
+	registerDropHandler(async file => {
+		if (file.path) {
+			const doc = await docs.openPath(file.path)
+			if (doc) window.showToast?.(`opened ${file.name}`, 1200, 'tabler:check')
+		} else {
+			setMarkdown(file.content)
+		}
+	})
 
 	// Cleanup storage on page unload
 	window.addEventListener('beforeunload', cleanup)

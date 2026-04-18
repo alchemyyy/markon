@@ -12,7 +12,7 @@ const styles = `
 	border: 2px solid var(--accent);
 	padding: 16px 24px;
 	border-radius: 16px;
-	box-shadow: 0 8px 32px var(--accent-alpha), 0 0 0 1px var(--accent-alpha);
+	box-shadow: 0 4px 12px var(--shadow-strong);
 	backdrop-filter: blur(16px);
 	z-index: 10001;
 	max-width: 90vw;
@@ -229,7 +229,7 @@ const getThemeColors = themeName => {
 
 export const getPrefTheme = () => {
 	const params = new URLSearchParams(window.location.search)
-	const theme = params.get('theme') || localStorage.getItem('theme-name') || 'solarized'
+	const theme = params.get('theme') || localStorage.getItem('theme-name') || 'github-modified'
 	const mode = params.get('mode') || localStorage.getItem('theme-mode') || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
 
 	return { theme, mode }
@@ -242,7 +242,7 @@ const updateThemeColor = () => {
 }
 
 export const applyTheme = async (themeName, mode) => {
-	const validTheme = themeName && themeName !== 'undefined' ? themeName : 'tokyo-night'
+	const validTheme = themeName && themeName !== 'undefined' ? themeName : 'github-modified'
 	const validMode = mode && mode !== 'undefined' ? mode : 'dark'
 
 	const html = document.documentElement
