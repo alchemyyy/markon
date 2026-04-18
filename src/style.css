@@ -38,7 +38,7 @@ body {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--bg) var(--bg-light);
+  scrollbar-color: color-mix(in srgb, var(--text) 33%, transparent) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -47,7 +47,7 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: var(--comment);
+  background: color-mix(in srgb, var(--text) 33%, transparent);
   border-radius: 8px;
   border: 2px solid transparent;
   background-clip: content-box;

@@ -16,6 +16,64 @@ const lineNumbersOnByDefault = () => {
 }
 const lineNumbersExt = enabled => (enabled ? lineNumbers() : [])
 
+// CodeMirror's built-in drag-selection autoscroll is glacially slow — it
+// scrolls a fixed handful of px per tick regardless of how far past the
+// viewport edge the pointer is. Add our own rAF-driven scroller that ramps
+// with pointer distance, capped to a sane max so fullscreen doesn't fly
+// off. The bottom trigger zone is the bottom 4% of the scroller (so it
+// stays proportional from a small window all the way up to fullscreen).
+const AUTOSCROLL_TOP_ZONE = 80 // px inside the top edge where the ramp begins
+const AUTOSCROLL_BOTTOM_ZONE_RATIO = 0.06 // bottom 6% of the scroller
+const AUTOSCROLL_RAMP = 0.18 // px-per-frame added per px past the trigger line
+const AUTOSCROLL_BASE = 2 // px/frame at the trigger line
+const AUTOSCROLL_MAX = 28 // hard cap (fullscreen-friendly)
+
+const attachFastAutoscroll = view => {
+	const scroller = view.scrollDOM
+	let dragging = false
+	let pointerY = 0
+	let rafId = 0
+
+	const tick = () => {
+		if (!dragging) {
+			rafId = 0
+			return
+		}
+		const rect = scroller.getBoundingClientRect()
+		const bottomZone = rect.height * AUTOSCROLL_BOTTOM_ZONE_RATIO
+		const above = rect.top + AUTOSCROLL_TOP_ZONE - pointerY
+		const below = pointerY - (rect.bottom - bottomZone)
+		let dy = 0
+		if (above > 0) dy = -Math.min(AUTOSCROLL_MAX, AUTOSCROLL_BASE + above * AUTOSCROLL_RAMP)
+		else if (below > 0) dy = Math.min(AUTOSCROLL_MAX, AUTOSCROLL_BASE + below * AUTOSCROLL_RAMP)
+		if (dy !== 0) scroller.scrollTop += dy
+		rafId = requestAnimationFrame(tick)
+	}
+
+	const stop = () => {
+		dragging = false
+		if (rafId) cancelAnimationFrame(rafId)
+		rafId = 0
+		window.removeEventListener('pointermove', onMove)
+		window.removeEventListener('pointerup', stop)
+		window.removeEventListener('pointercancel', stop)
+	}
+
+	const onMove = e => {
+		pointerY = e.clientY
+	}
+
+	scroller.addEventListener('pointerdown', e => {
+		if (e.button !== 0) return
+		dragging = true
+		pointerY = e.clientY
+		window.addEventListener('pointermove', onMove)
+		window.addEventListener('pointerup', stop)
+		window.addEventListener('pointercancel', stop)
+		if (!rafId) rafId = requestAnimationFrame(tick)
+	})
+}
+
 export const createEditor = async () => {
 	let view = null
 	const subscribers = []
@@ -53,6 +111,7 @@ export const createEditor = async () => {
 		})
 		view = new EditorView({ state, parent: document.querySelector('#editor') })
 		mountIfNeeded()
+		attachFastAutoscroll(view)
 	}
 
 	const setLineNumbers = enabled => {
