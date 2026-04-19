@@ -107,14 +107,23 @@ export const createTabBar = ({ docs, container }) => {
 		if (!drag) return
 		const captured = drag
 		drag = null
-		lastDragEndAt = Date.now()
 
 		// After tear-off the tab no longer belongs to this window — nothing
 		// to reset or reorder here. OS drag (if it caught in time) ends on
-		// its own when the user releases.
-		if (captured.tornOff) return
+		// its own when the user releases. Stamp lastDragEndAt so the
+		// trailing click event doesn't fire a tab switch on a tab that
+		// was just torn out from under it.
+		if (captured.tornOff) {
+			lastDragEndAt = Date.now()
+			return
+		}
 
+		// Pure click (no drag past the threshold) — leave lastDragEndAt
+		// alone so the click handler doesn't get swallowed as post-drag
+		// noise. Tab switching depends on this.
 		if (!captured.started) return
+
+		lastDragEndAt = Date.now()
 
 		if (captured.to != null && captured.to !== captured.from) {
 			// reorder() fires a render that replaces every tab element with a
