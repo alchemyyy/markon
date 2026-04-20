@@ -344,8 +344,12 @@ html.editor-scrollbar-left .cm-line {
 	align-items: center;
 	gap: 6px;
 	padding: 0 10px;
-	min-width: 120px;
-	max-width: 200px;
+	/* Equal-width: every tab claims an equal share of the bar via
+	   `flex: 1 1 0`. min-width keeps a single tab from collapsing into
+	   nothing; max-width caps how big tabs get when there are very few. */
+	flex: 1 1 0;
+	min-width: 80px;
+	max-width: 240px;
 	background: transparent;
 	border-right: 1px solid var(--text-alpha);
 	color: var(--comment);
@@ -419,6 +423,46 @@ html.editor-scrollbar-left .cm-line {
 	z-index: 10;
 	box-shadow: 0 4px 12px var(--shadow-strong);
 	transition: none;
+}
+
+/* Generic right-click context menu — used by the tab bar, the editor,
+   and the rendered preview pane. */
+.context-menu {
+	position: fixed;
+	z-index: 1000;
+	min-width: 180px;
+	background: var(--bg-alpha);
+	backdrop-filter: blur(16px) saturate(120%);
+	border: 1px solid var(--text-alpha);
+	border-radius: 10px;
+	padding: 4px;
+	font-family: "Monaspace Krypton", system-ui, sans-serif;
+	font-size: 13px;
+	display: grid;
+	gap: 2px;
+	box-shadow: 0 6px 24px var(--shadow-strong);
+}
+
+.context-menu-item {
+	all: unset;
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	padding: 6px 10px;
+	border-radius: 6px;
+	cursor: pointer;
+	color: var(--text);
+}
+
+.context-menu-item:hover {
+	background: var(--text-alpha);
+	color: var(--accent);
+}
+
+.context-menu-item:disabled {
+	opacity: 0.4;
+	cursor: default;
+	pointer-events: none;
 }
 
 /* Chrome-style tear-off preview: when the pointer leaves the tab bar

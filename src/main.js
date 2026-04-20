@@ -13,6 +13,7 @@ import './themes.css'
 import { updatePWAUI } from './actions.js'
 import { createEditor } from './core.js'
 import { createDocsStore } from './docs.js'
+import { showContextMenu } from './context-menu.js'
 import { getCliArgs, registerDropHandler, snapAndDrag } from './native.js'
 import { setupPreview } from './preview.js'
 import { createRecentDropdown } from './recent-ui.js'
@@ -131,6 +132,44 @@ const boot = async () => {
 	const { getMarkdown, setMarkdown, onMarkdownUpdated, cleanup, profiler, scrollToLine, view } = await createEditor()
 	const { previewHtml, showToast } = await initUI({ getMarkdown, setMarkdown, scrollToLine, view })
 	setupPreview({ getMarkdown, onMarkdownUpdated, previewHtml, profiler })
+
+	// Right-click on the rendered preview: copy + select all. Attached
+	// to the preview container so right-clicking anywhere in the pane
+	// (including blank gaps between rendered blocks) opens the menu.
+	const previewPane = document.getElementById('preview') ?? previewHtml
+	previewPane?.addEventListener('contextmenu', e => {
+		e.preventDefault()
+		const selectionText = window.getSelection()?.toString() ?? ''
+		showContextMenu({ x: e.clientX, y: e.clientY }, [
+			{
+				label: 'Copy',
+				disabled: !selectionText,
+				onClick: async () => {
+					try {
+						await navigator.clipboard.writeText(selectionText)
+					} catch {}
+				},
+			},
+			{
+				label: 'Select all',
+				onClick: () => {
+					if (!previewHtml) return
+					// Defer one tick — the menu-button click that fires this
+					// also generates pointerdown / mouseup events on body
+					// that collapse the selection if we apply it
+					// synchronously inside the click handler.
+					setTimeout(() => {
+						const range = document.createRange()
+						range.selectNodeContents(previewHtml)
+						const sel = window.getSelection()
+						if (!sel) return
+						sel.removeAllRanges()
+						sel.addRange(range)
+					}, 0)
+				},
+			},
+		])
+	})
 
 	// Documents / tabs / tree / recent files
 	const docs = createDocsStore({

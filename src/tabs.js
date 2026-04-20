@@ -1,3 +1,4 @@
+import { showContextMenu } from './context-menu.js'
 import { createElement } from './utils.js'
 
 // Pointer-event based reorder: more reliable than HTML5 drag in WebView2,
@@ -253,12 +254,28 @@ export const createTabBar = ({ docs, container }) => {
 			}
 		})
 
+		el.addEventListener('contextmenu', e => {
+			e.preventDefault()
+			openContextMenu(doc.id, e.clientX, e.clientY)
+		})
+
 		close.addEventListener('click', e => {
 			e.stopPropagation()
 			docs.close(doc.id)
 		})
 
 		return el
+	}
+
+	const openContextMenu = (id, clientX, clientY) => {
+		const all = docs.list()
+		const idx = all.findIndex(t => t.id === id)
+		if (idx < 0) return
+		showContextMenu({ x: clientX, y: clientY }, [
+			{ label: 'Close', onClick: () => docs.close(id) },
+			{ label: 'Close others', disabled: all.length <= 1, onClick: () => docs.closeOthers(id) },
+			{ label: 'Close all to right', disabled: idx === all.length - 1, onClick: () => docs.closeAllToRight(id) },
+		])
 	}
 
 	const render = ({ tabs, activeId }) => {

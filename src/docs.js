@@ -319,6 +319,26 @@ export const createDocsStore = ({ editor, showToast, onActiveChange }) => {
 		notify()
 	}
 
+	// Right-click "Close others": close every tab except `id`. Routes
+	// through close() so dirty tabs still get the save prompt.
+	const closeOthers = async id => {
+		const ids = tabs.filter(t => t.id !== id).map(t => t.id)
+		for (const otherId of ids) {
+			await close(otherId)
+		}
+	}
+
+	// Right-click "Close all to right": close every tab positioned after
+	// `id` in the bar. Same dirty-tab handling as close().
+	const closeAllToRight = async id => {
+		const idx = tabs.findIndex(t => t.id === id)
+		if (idx < 0) return
+		const ids = tabs.slice(idx + 1).map(t => t.id)
+		for (const rightId of ids) {
+			await close(rightId)
+		}
+	}
+
 	// Remove a doc from the local tab list without any confirmation.
 	// Caller is responsible for already having persisted it elsewhere.
 	const detachLocal = id => {
@@ -671,6 +691,8 @@ export const createDocsStore = ({ editor, showToast, onActiveChange }) => {
 		newUntitled,
 		switchTo,
 		close,
+		closeOthers,
+		closeAllToRight,
 		save,
 		saveAs: saveAsDoc,
 		saveAll,

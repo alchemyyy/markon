@@ -1,9 +1,19 @@
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import {
+	defaultKeymap,
+	history,
+	historyKeymap,
+	indentWithTab,
+	redo,
+	redoDepth,
+	undo,
+	undoDepth,
+} from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import sampleMd from '../sample.md?raw'
+import { showContextMenu } from './context-menu.js'
 import { createProfiler } from './profiler.js'
 import { editorThemeExtensions } from './style.js'
 
@@ -116,6 +126,65 @@ export const createEditor = async () => {
 		view = new EditorView({ state, parent: document.querySelector('#editor') })
 		mountIfNeeded()
 		attachFastAutoscroll(view)
+		attachEditorContextMenu(view)
+	}
+
+	// Right-click menu inside the editor pane: cut/copy/paste/select-all/
+	// undo/redo. CodeMirror commands handle the editor-state side; the
+	// browser Clipboard API does the OS clipboard read/write so we don't
+	// depend on document.execCommand (deprecated, behavior varies).
+	const attachEditorContextMenu = view => {
+		const cutSelection = async () => {
+			const sel = view.state.selection.main
+			if (sel.from === sel.to) return
+			const text = view.state.sliceDoc(sel.from, sel.to)
+			try {
+				await navigator.clipboard.writeText(text)
+			} catch {}
+			view.dispatch(view.state.replaceSelection(''))
+			view.focus()
+		}
+		const copySelection = async () => {
+			const sel = view.state.selection.main
+			if (sel.from === sel.to) return
+			try {
+				await navigator.clipboard.writeText(view.state.sliceDoc(sel.from, sel.to))
+			} catch {}
+		}
+		const pasteAtCursor = async () => {
+			let text = ''
+			try {
+				text = await navigator.clipboard.readText()
+			} catch {}
+			if (!text) return
+			view.dispatch(view.state.replaceSelection(text))
+			view.focus()
+		}
+
+		view.dom.addEventListener('contextmenu', e => {
+			e.preventDefault()
+			const sel = view.state.selection.main
+			const hasSelection = sel.from !== sel.to
+			const canUndo = undoDepth(view.state) > 0
+			const canRedo = redoDepth(view.state) > 0
+			showContextMenu({ x: e.clientX, y: e.clientY }, [
+				{ label: 'Cut', disabled: !hasSelection, onClick: cutSelection },
+				{ label: 'Copy', disabled: !hasSelection, onClick: copySelection },
+				{ label: 'Paste', onClick: pasteAtCursor },
+				{
+					label: 'Select all',
+					onClick: () => {
+						// Focus first so the highlight actually shows; calling
+						// selectAll() on an unfocused view dispatches the
+						// transaction but the visual selection isn't drawn.
+						view.focus()
+						view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } })
+					},
+				},
+				{ label: 'Undo', disabled: !canUndo, onClick: () => undo(view) },
+				{ label: 'Redo', disabled: !canRedo, onClick: () => redo(view) },
+			])
+		})
 	}
 
 	const setLineNumbers = enabled => {
