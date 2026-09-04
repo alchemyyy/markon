@@ -59,21 +59,25 @@ This means the same `docs.openViaDialog()` / `docs.save()` code paths work in PW
 
 `@tauri-apps/*` plugin imports are dynamic (`await import(...)`) so they tree-shake out of the web bundle.
 
+Preview references are filesystem-aware in Tauri. `src/link-targets.js` classifies and resolves relative paths and `file://` URLs against the active document. Markdown files open in a Markon tab, other local files use `tauri-plugin-opener`, and local images use a scoped asset-protocol URL. The PWA leaves relative and hosted references to the browser.
+
 ---
 
 ## Tauri configuration (`src-tauri/`)
 
-- `Cargo.toml`: `tauri-plugin-dialog`, `tauri-plugin-fs`, `tauri-plugin-cli` (all v2)
-- `src/lib.rs`: registers all three plugins
+- `Cargo.toml`: `tauri-plugin-dialog`, `tauri-plugin-fs`, `tauri-plugin-cli`, `tauri-plugin-opener` (all v2)
+- `src/lib.rs`: registers all four plugins plus `allow_preview_asset`, which grants asset-protocol access to one resolved image file at a time
 - `tauri.conf.json`:
   - `productName: markon`, identifier `com.getmarkon.markon`
   - Window: 1200×800 default, 600×400 min
+  - Asset protocol enabled with an empty static scope; preview images are added dynamically by `allow_preview_asset`
   - `bundle.fileAssociations` for `.md` / `.markdown` / `.mdown` / `.mkd`
   - `plugins.cli.args[]` declares a positional `files` arg with `multiple: true` (and **no** `multipleOccurrences` — that key was rejected by the v2 schema)
 - `capabilities/default.json` grants:
   - `dialog:allow-open`, `dialog:allow-save`
   - `fs:allow-read-text-file`, `fs:allow-write-text-file`, `fs:allow-read-dir`, `fs:allow-stat`, `fs:allow-watch` (all `path: "**"`)
   - `cli:default`
+  - Opener permissions for standard web URLs and local paths
   - `core:window:allow-set-title`
 
 Whenever you add a new Tauri permission, **the user must restart `npm run tauri:dev`** — capabilities are baked in at startup.

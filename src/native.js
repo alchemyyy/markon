@@ -1,8 +1,54 @@
+import { resolveLocalReferencePath } from './link-targets.js'
 import { downloadText, openFileCSS, openFileText } from './utils.js'
 
 export const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
+const previewAssetScopeRequests = new Map()
+
 const basename = path => (path ? path.split(/[\\/]/).pop() : null)
+
+/** Resolves a local Markdown reference against the active document path. */
+export const resolveLocalReference = async (reference, documentPath) => {
+	if (!isTauri()) return null
+	const pathAPI = await import('@tauri-apps/api/path')
+	return await resolveLocalReferencePath(reference, documentPath, pathAPI)
+}
+
+/** Converts a local file path into an asset URL after granting that exact file access. */
+export const convertPreviewAsset = async path => {
+	if (!isTauri() || !path) return null
+
+	let scopeRequest = previewAssetScopeRequests.get(path)
+	if (!scopeRequest) {
+		const { invoke } = await import('@tauri-apps/api/core')
+		scopeRequest = invoke('allow_preview_asset', { path }).catch(error => {
+			previewAssetScopeRequests.delete(path)
+			throw error
+		})
+		previewAssetScopeRequests.set(path, scopeRequest)
+	}
+	await scopeRequest
+
+	const { convertFileSrc } = await import('@tauri-apps/api/core')
+	return convertFileSrc(path)
+}
+
+/** Opens a web URL in the system browser instead of replacing the editor webview. */
+export const openExternalURL = async url => {
+	if (!isTauri()) {
+		window.open(url, '_blank', 'noopener')
+		return
+	}
+	const { openUrl } = await import('@tauri-apps/plugin-opener')
+	await openUrl(url)
+}
+
+/** Opens a non-Markdown local file with its system-default application. */
+export const openPathExternally = async path => {
+	if (!isTauri() || !path) return
+	const { openPath } = await import('@tauri-apps/plugin-opener')
+	await openPath(path)
+}
 
 const MD_FILTERS = [
 	{ name: 'Markdown', extensions: ['md', 'markdown', 'mdown', 'mkd', 'txt'] },

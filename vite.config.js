@@ -9,7 +9,15 @@ export default defineConfig({
 	},
 	server: {
 		watch: {
-			ignored: ['**/*.tmp', '**/.dev/**', '**/.git/**', '**/.github/**', '**/node_modules/**', '**/dist/**'],
+			ignored: [
+				'**/*.tmp',
+				'**/.dev/**',
+				'**/.git/**',
+				'**/.github/**',
+				'**/node_modules/**',
+				'**/dist/**',
+				'**/src-tauri/target/**',
+			],
 		},
 	},
 	plugins: [

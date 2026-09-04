@@ -24,6 +24,12 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "cli:default",
+    "opener:allow-open-url",
+    "opener:allow-default-urls",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "**/*" }]
+    },
     {
       "identifier": "fs:allow-read-text-file",
       "allow": [{ "path": "**" }]

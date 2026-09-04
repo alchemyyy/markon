@@ -131,7 +131,6 @@ const boot = async () => {
 
 	const { getMarkdown, setMarkdown, onMarkdownUpdated, cleanup, profiler, scrollToLine, view } = await createEditor()
 	const { previewHtml, showToast } = await initUI({ getMarkdown, setMarkdown, scrollToLine, view })
-	setupPreview({ getMarkdown, onMarkdownUpdated, previewHtml, profiler })
 
 	// Right-click on the rendered preview: copy + select all. Attached
 	// to the preview container so right-clicking anywhere in the pane
@@ -191,6 +190,16 @@ const boot = async () => {
 	window.recentDropdown = recentDropdown
 
 	await docs.boot()
+	setupPreview({
+		getMarkdown,
+		getDocumentPath: () => docs.getActive()?.path ?? null,
+		openDocumentPath: path => docs.openPath(path),
+		onDocumentChanged: docs.onChange,
+		onMarkdownUpdated,
+		previewHtml,
+		profiler,
+		showToast,
+	})
 
 	// Adopted tab is now rendered in the DOM and populated in the editor —
 	// this is the authoritative "tab is built" moment. Fire the atomic

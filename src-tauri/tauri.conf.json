@@ -22,7 +22,11 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
     }
   },
   "bundle": {
@@ -45,6 +49,9 @@
     ]
   },
   "plugins": {
+    "opener": {
+      "requireLiteralLeadingDot": false
+    },
     "cli": {
       "description": "Minimal distraction-free live Markdown editor",
       "args": [
