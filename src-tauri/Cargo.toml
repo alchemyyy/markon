@@ -24,6 +24,7 @@ log = "0.4"
 tauri = { version = "2.11.5", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
+# `watch` backs watchPath (file tree, preview images); without it the command doesn't exist
+tauri-plugin-fs = { version = "2", features = ["watch"] }
 tauri-plugin-cli = "2"
 tauri-plugin-opener = "2.5.5"

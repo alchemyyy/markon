@@ -1,7 +1,7 @@
 import { marked } from 'marked'
 import morphdom from 'morphdom'
 import { enhanceCallouts } from './callouts.js'
-import { localImageUrl, openLocalTarget } from './gfm/local-files.js'
+import { localImageUrl, onLocalImagesChanged, openLocalTarget } from './gfm/local-files.js'
 import { getPalette, getRenderer, savePalette, saveRenderer } from './gfm/prefs.js'
 import { classifyReference, isMarkdownPath } from './gfm/references.js'
 import { isTauri, openExternal, openPathExternally } from './native.js'
@@ -216,6 +216,13 @@ export const setupPreview = ({ getMarkdown, onMarkdownUpdated, previewHtml, prof
 
 	applyRenderer()
 	onMarkdownUpdated(update)
+	// An image changed on disk: markon's renderer renders again (even if hidden, once shown),
+	// the GitHub renderer reloads its images in place
+	onLocalImagesChanged(() => {
+		lastRenderedContent = null
+		if (renderer === 'markon') scheduleRender()
+		gfm?.reloadImages()
+	})
 
 	return {
 		getRenderer: () => renderer,

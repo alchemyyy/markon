@@ -81,13 +81,13 @@ export const readBinaryFileAt = async path => {
 	}
 }
 
-// What is at a path: `{ isFile, isDirectory, size }`, or null when nothing is there
+// What is at a path: `{ isFile, isDirectory, size, mtimeMs }`, or null when nothing is there
 export const statPath = async path => {
 	if (!isTauri() || !path) return null
 	const { stat } = await import('@tauri-apps/plugin-fs')
 	try {
 		const info = await stat(path)
-		return { isFile: info.isFile, isDirectory: info.isDirectory, size: info.size }
+		return { isFile: info.isFile, isDirectory: info.isDirectory, size: info.size, mtimeMs: info.mtime?.getTime() ?? 0 }
 	} catch {
 		return null
 	}

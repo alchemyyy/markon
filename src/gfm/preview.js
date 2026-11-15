@@ -233,6 +233,15 @@ export class GfmPreview {
 		this.page.enhance(inserted)
 	}
 
+	/** Shows every local image again; the cache has dropped the ones that changed on disk */
+	reloadImages() {
+		for (const image of this.article.querySelectorAll('img.gfm-image-error')) {
+			image.classList.remove('gfm-image-error')
+			image.removeAttribute('title')
+		}
+		this.loadImages(this.article, this.shownPath ?? null)
+	}
+
 	loadImages(root, documentPath) {
 		const query = `img[${LOCAL_IMAGE_ATTRIBUTE}]`
 		const images = root.matches(query) ? [root] : Array.from(root.querySelectorAll(query))
@@ -247,6 +256,8 @@ export class GfmPreview {
 			url.then(
 				resolved => image.setAttribute('src', resolved),
 				error => {
+					// A deleted image stops showing its last version
+					image.removeAttribute('src')
 					image.classList.add('gfm-image-error')
 					image.setAttribute('title', error instanceof Error ? error.message : String(error))
 				},
