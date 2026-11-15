@@ -7,6 +7,7 @@ import {
 	SETTINGS_ACTIONS,
 	setToolbarBtnVisible,
 } from './actions.js'
+import { getPalette, PALETTES } from './gfm/prefs.js'
 import { openCSS, saveAs } from './native.js'
 import {
 	applyTheme,
@@ -157,6 +158,20 @@ const makePrefRow = (label, checked, onChange) => {
 	return row
 }
 
+// `options`: `{ value: { label, title } }`
+const makePrefSelectRow = (label, options, value, onChange) => {
+	const row = createElement('label', { className: 'settings-pref-row select' })
+	const labelEl = createElement('span', { className: 'settings-pref-label', textContent: label })
+	const select = createElement('select')
+	for (const [optionValue, { label: optionLabel, title }] of Object.entries(options)) {
+		select.appendChild(createElement('option', { value: optionValue, textContent: optionLabel, title }))
+	}
+	select.value = value
+	select.addEventListener('change', () => onChange(select.value))
+	row.append(labelEl, select)
+	return row
+}
+
 const createPrefsSection = () => {
 	const section = createElement('div', { className: 'settings-section' })
 	const title = createElement('h3', {
@@ -180,6 +195,13 @@ const createPrefsSection = () => {
 	)
 
 	section.appendChild(makePrefRow('Editor scrollbar on the left', isScrollbarLeft(), setScrollbarLeft))
+
+	// Built with the dialog, before the preview exists; the saved palette is the one it shows
+	section.appendChild(
+		makePrefSelectRow('GitHub renderer colors', PALETTES, getPalette(), palette => {
+			window.previewRenderer?.setPalette(palette)
+		}),
+	)
 
 	return section
 }

@@ -93,26 +93,67 @@ const getVisibleElementFromPreview = (previewContainer) => {
 	}
 }
 
-export const createScrollSync = (editorView, previewContainer, getMarkdown, scrollToLine) => {
+// The editor's scroll position for the GitHub renderer's preview to follow:
+// `line` is the source line (1-based, fractional) at the top of the editor
+const editorScrollPosition = view => {
+	const scroller = view.scrollDOM
+	const scrollable = scroller.scrollHeight - scroller.clientHeight
+	const height = Math.max(0, scroller.getBoundingClientRect().top - view.documentTop)
+	const block = view.lineBlockAtHeight(height)
+	const fraction = block.height > 0 ? Math.min(1, Math.max(0, (height - block.top) / block.height)) : 0
+	return {
+		line: view.state.doc.lineAt(block.from).number + fraction,
+		lineCount: view.state.doc.lines,
+		atTop: scroller.scrollTop <= 1,
+		atBottom: scrollable - scroller.scrollTop <= 2,
+	}
+}
+
+// Scrolls the editor so source line `position` (1-based, fractional) is at its top
+const scrollEditorToLine = (view, position) => {
+	const doc = view.state.doc
+	const number = Math.min(doc.lines, Math.max(1, Math.floor(position)))
+	const block = view.lineBlockAt(doc.line(number).from)
+	const scroller = view.scrollDOM
+	const contentTop = view.documentTop - scroller.getBoundingClientRect().top + scroller.scrollTop
+	scroller.scrollTop = contentTop + block.top + (position - number) * block.height
+}
+
+// An instant scroll has fired its scroll event two frames on
+const afterScroll = release => requestAnimationFrame(() => requestAnimationFrame(release))
+
+// Keeps the editor and the preview scrolled to the same place.
+// The GitHub renderer marks blocks with their source lines and syncs by line;
+// markon's renderer syncs by matching the text of the line at the top.
+export const createScrollSync = (editorView, preview, previewContainer, getMarkdown, scrollToLine) => {
 	let enabled = false
 	let syncingEditor = false
 	let syncingPreview = false
-	let editorScrollHandler = null
-	let previewScrollHandler = null
-	let previewScroller = null
-	let previewHtmlScroller = null
+	let previewScrollers = []
 	let editorDebounceTimer = null
 	let previewDebounceTimer = null
+	// Until then, scrolling in either pane doesn't move the other (find reveals a match in each)
+	let heldUntil = 0
+	const blocked = () => syncingEditor || syncingPreview || !enabled || performance.now() < heldUntil
 
 	const syncEditorToPreview = () => {
-		if (syncingEditor || syncingPreview || !enabled) return
+		if (blocked()) return
 		
 		clearTimeout(editorDebounceTimer)
 		editorDebounceTimer = setTimeout(() => {
-			if (syncingEditor || syncingPreview || !enabled) return
+			if (blocked()) return
 			
 			syncingEditor = true
 			requestAnimationFrame(() => {
+				const gfm = preview.gfm()
+				if (gfm) {
+					gfm.follow(editorScrollPosition(editorView))
+					afterScroll(() => {
+						syncingEditor = false
+					})
+					return
+				}
+
 				const visible = getVisibleLineFromEditor(editorView)
 				if (!visible) {
 					syncingEditor = false
@@ -138,14 +179,30 @@ export const createScrollSync = (editorView, previewContainer, getMarkdown, scro
 	}
 
 	const syncPreviewToEditor = () => {
-		if (syncingEditor || syncingPreview || !enabled) return
+		if (blocked()) return
 		
 		clearTimeout(previewDebounceTimer)
 		previewDebounceTimer = setTimeout(() => {
-			if (syncingEditor || syncingPreview || !enabled) return
+			if (blocked()) return
 			
 			syncingPreview = true
 			requestAnimationFrame(() => {
+				const gfm = preview.gfm()
+				if (gfm) {
+					const scroller = gfm.scroller
+					const editorScroller = editorView.scrollDOM
+					if (scroller.scrollTop <= 1) editorScroller.scrollTop = 0
+					else if (scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 2) {
+						editorScroller.scrollTop = editorScroller.scrollHeight
+					} else {
+						scrollEditorToLine(editorView, gfm.topLine(editorView.state.doc.lines))
+					}
+					afterScroll(() => {
+						syncingPreview = false
+					})
+					return
+				}
+
 				const visible = getVisibleElementFromPreview(previewContainer)
 				if (!visible) {
 					syncingPreview = false
@@ -173,54 +230,52 @@ export const createScrollSync = (editorView, previewContainer, getMarkdown, scro
 		}, 50)
 	}
 
+	const editorScrollHandler = () => syncEditorToPreview()
+	const previewScrollHandler = () => syncPreviewToEditor()
+
+	// Listens to the scrolling of the preview shown:
+	// the GitHub renderer's shadow-root scroller, or #previewhtml and its container
+	const watchPreview = () => {
+		for (const scroller of previewScrollers) scroller.removeEventListener('scroll', previewScrollHandler)
+		previewScrollers = []
+		if (!enabled) return
+		const gfm = preview.gfm()
+		const previewHtml = previewContainer.querySelector('#previewhtml')
+		previewScrollers = gfm ? [gfm.scroller] : [previewContainer, previewHtml].filter(Boolean)
+		for (const scroller of previewScrollers) {
+			scroller.addEventListener('scroll', previewScrollHandler, { passive: true })
+		}
+	}
+
 	const enable = () => {
 		if (enabled) return
 		enabled = true
-		const editorScroller = editorView.scrollDOM
-		const previewHtml = previewContainer.querySelector('#previewhtml')
-		
-		editorScrollHandler = () => syncEditorToPreview()
-		previewScrollHandler = () => syncPreviewToEditor()
-		
-		editorScroller.addEventListener('scroll', editorScrollHandler, { passive: true })
-		
-		previewScroller = previewContainer
-		previewScroller.addEventListener('scroll', previewScrollHandler, { passive: true })
-		
-		if (previewHtml) {
-			previewHtmlScroller = previewHtml
-			previewHtmlScroller.addEventListener('scroll', previewScrollHandler, { passive: true })
-		}
+		editorView.scrollDOM.addEventListener('scroll', editorScrollHandler, { passive: true })
+		watchPreview()
 	}
 
 	const disable = () => {
 		if (!enabled) return
 		enabled = false
-		
-		const editorScroller = editorView.scrollDOM
-		if (editorScrollHandler) {
-			editorScroller.removeEventListener('scroll', editorScrollHandler)
-			editorScrollHandler = null
-		}
-		
-		if (!previewScrollHandler) {
-			previewScroller = null
-			previewHtmlScroller = null
-			return
-		}
-		
-		if (previewScroller) {
-			previewScroller.removeEventListener('scroll', previewScrollHandler)
-		}
-		if (previewHtmlScroller) {
-			previewHtmlScroller.removeEventListener('scroll', previewScrollHandler)
-		}
-		
-		previewScrollHandler = null
-		previewScroller = null
-		previewHtmlScroller = null
+		editorView.scrollDOM.removeEventListener('scroll', editorScrollHandler)
+		watchPreview()
 	}
 
-	return { enable, disable }
+	// Another renderer shown: follow its scrolling, and bring it to the editor's place
+	preview.onChange(() => {
+		watchPreview()
+		syncEditorToPreview()
+	})
+	// A GitHub render can move blocks under the editor's top line
+	preview.onRendered(syncEditorToPreview)
+
+	return {
+		enable,
+		disable,
+		/** Ignores scrolling in both panes for `ms`, so each can be scrolled on its own */
+		hold: ms => {
+			heldUntil = performance.now() + ms
+		},
+	}
 }
 

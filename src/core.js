@@ -14,6 +14,7 @@ import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import sampleMd from '../sample.md?raw'
 import { showContextMenu } from './context-menu.js'
+import { findExtension } from './find.js'
 import { createProfiler } from './profiler.js'
 import { editorThemeExtensions } from './style.js'
 
@@ -121,6 +122,7 @@ export const createEditor = async () => {
 					}
 				}),
 				...editorThemeExtensions(),
+				findExtension,
 			],
 		})
 		view = new EditorView({ state, parent: document.querySelector('#editor') })

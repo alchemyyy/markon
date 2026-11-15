@@ -23,8 +23,10 @@
 ## Features
 
 - **GFM**: GitHub Flavored Markdown + alerts
+- **GitHub renderer**: [gh-gfm-preview](https://github.com/thiagokokada/gh-gfm-preview)'s renderer, offline (WebAssembly), with Mermaid, MathJax, and GeoJSON/TopoJSON maps; toggle with `ctrl+g`
 - **Syntax**: 250+ languages with highlighting
 - **Split views**: resizable editor & preview
+- **Find**: `ctrl+f` searches the raw Markdown and the rendered preview at once
 - **Sync views**: bidirectional scroll sync
 - **Auto save**: localStorage persistence
 - **FPS profiler**: latency metrics overlay
@@ -52,6 +54,7 @@
 ```bash
 npm run dev      # start dev server
 npm run build    # build for production
+npm run gen:gfm  # rebuild the GitHub renderer in src/gfm/vendor/ (needs Go 1.25+, or downloads it)
 npm run check    # lint code
 npm run fix      # fix lint issues
 ```

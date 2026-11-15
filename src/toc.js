@@ -111,15 +111,20 @@ const createHoverHandlers = (button, dropdown, delay = 300) => {
   createEventHandler(button, "click", toggle);
 };
 
-const observePreview = (previewHtml, update) => {
+// Observes each renderer's content root once it exists; returns the function that adds one
+const observePreview = (update) => {
   const observer = new MutationObserver(() => {
     requestAnimationFrame(update);
   });
-  observer.observe(previewHtml, { childList: true, subtree: true });
-  return () => observer.disconnect();
+  const observed = new Set();
+  return (root) => {
+    if (!root || observed.has(root)) return;
+    observed.add(root);
+    observer.observe(root, { childList: true, subtree: true });
+  };
 };
 
-export const createTOC = (previewHtml, previewContainer, { getMarkdown, scrollToLine } = {}) => {
+export const createTOC = (preview, previewContainer, { getMarkdown, scrollToLine } = {}) => {
   const button = createElement(
     "iconify-icon",
     {
@@ -143,10 +148,16 @@ export const createTOC = (previewHtml, previewContainer, { getMarkdown, scrollTo
   const onScroll = (header) => scrollToHeader(header, getMarkdown, scrollToLine);
 
   const update = () => {
-    const headers = extractHeaders(previewHtml);
-    updateTOCList(dropdown, headers, onScroll);
+    const root = preview.contentRoot();
+    updateTOCList(dropdown, root ? extractHeaders(root) : [], onScroll);
   };
 
-  update();
-  observePreview(previewHtml, update);
+  // Follows whichever renderer the preview shows
+  const observe = observePreview(update);
+  const follow = () => {
+    observe(preview.contentRoot());
+    update();
+  };
+  follow();
+  preview.onChange(follow);
 };

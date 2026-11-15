@@ -1,4 +1,5 @@
-import { openFolder, readDirEntries, watchPath } from './native.js'
+import { showContextMenu } from './context-menu.js'
+import { openFolder, readDirEntries, revealInFileBrowser, watchPath } from './native.js'
 import { createElement } from './utils.js'
 
 const MD_EXTS = new Set(['md', 'markdown', 'mdown', 'mkd', 'txt'])
@@ -336,6 +337,13 @@ export const createFileTree = ({ docs, container, showToast }) => {
 			}
 		})
 
+		row.addEventListener('contextmenu', e => {
+			e.preventDefault()
+			showContextMenu({ x: e.clientX, y: e.clientY }, [
+				{ label: 'Show in file browser', onClick: () => revealInFileBrowser(entry.path) },
+			])
+		})
+
 		return row
 	}
 
@@ -384,5 +392,5 @@ export const createFileTree = ({ docs, container, showToast }) => {
 		if (rootPath) rebuild()
 	})
 
-	return { open, close, openPicker, rebuild }
+	return { open, close, openPicker, rebuild, getRoot: () => rootPath }
 }

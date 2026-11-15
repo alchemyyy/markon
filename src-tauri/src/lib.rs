@@ -1,4 +1,4 @@
-use tauri::{Manager, PhysicalPosition};
+use tauri::PhysicalPosition;
 
 // Where we want the cursor to land relative to the new window's
 // top-left, in LOGICAL (CSS) pixels. Picked to put the cursor near the
@@ -33,15 +33,6 @@ async fn snap_and_drag(window: tauri::Window) -> Result<(), String> {
   Ok(())
 }
 
-// Grant the asset protocol access only to an image requested by the preview.
-#[tauri::command]
-fn allow_preview_asset(window: tauri::Window, path: String) -> Result<(), String> {
-  window
-    .state::<tauri::scope::Scopes>()
-    .allow_file(path)
-    .map_err(|error| error.to_string())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -49,7 +40,7 @@ pub fn run() {
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_cli::init())
     .plugin(tauri_plugin_opener::init())
-    .invoke_handler(tauri::generate_handler![snap_and_drag, allow_preview_asset])
+    .invoke_handler(tauri::generate_handler![snap_and_drag])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

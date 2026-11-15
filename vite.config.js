@@ -9,6 +9,8 @@ export default defineConfig({
 	},
 	server: {
 		watch: {
+			// src-tauri is the Tauri CLI's to watch; cargo locks build-script executables under target/ while it compiles,
+			// and watching them crashes Vite with EBUSY on Windows
 			ignored: [
 				'**/*.tmp',
 				'**/.dev/**',
@@ -16,7 +18,7 @@ export default defineConfig({
 				'**/.github/**',
 				'**/node_modules/**',
 				'**/dist/**',
-				'**/src-tauri/target/**',
+				'**/src-tauri/**',
 			],
 		},
 	},

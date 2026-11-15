@@ -30,8 +30,13 @@
       "identifier": "opener:allow-open-path",
       "allow": [{ "path": "**/*" }]
     },
+    "opener:allow-reveal-item-in-dir",
     {
       "identifier": "fs:allow-read-text-file",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-read-file",
       "allow": [{ "path": "**" }]
     },
     {

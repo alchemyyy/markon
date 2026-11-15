@@ -14,8 +14,7 @@ import { updatePWAUI } from './actions.js'
 import { createEditor } from './core.js'
 import { createDocsStore } from './docs.js'
 import { showContextMenu } from './context-menu.js'
-import { getCliArgs, registerDropHandler, snapAndDrag } from './native.js'
-import { setupPreview } from './preview.js'
+import { getCliArgs, openExternal, registerDropHandler, snapAndDrag } from './native.js'
 import { createRecentDropdown } from './recent-ui.js'
 import { applyScrollbarSide } from './settings.js'
 import { createTabBar } from './tabs.js'
@@ -130,7 +129,14 @@ const boot = async () => {
 	document.addEventListener('DOMContentLoaded', addTablerIcons)
 
 	const { getMarkdown, setMarkdown, onMarkdownUpdated, cleanup, profiler, scrollToLine, view } = await createEditor()
-	const { previewHtml, showToast } = await initUI({ getMarkdown, setMarkdown, scrollToLine, view })
+	const { previewHtml, preview, showToast } = await initUI({
+		getMarkdown,
+		setMarkdown,
+		onMarkdownUpdated,
+		profiler,
+		scrollToLine,
+		view,
+	})
 
 	// Right-click on the rendered preview: copy + select all. Attached
 	// to the preview container so right-clicking anywhere in the pane
@@ -152,14 +158,15 @@ const boot = async () => {
 			{
 				label: 'Select all',
 				onClick: () => {
-					if (!previewHtml) return
+					const root = preview.contentRoot()
+					if (!root) return
 					// Defer one tick — the menu-button click that fires this
 					// also generates pointerdown / mouseup events on body
 					// that collapse the selection if we apply it
 					// synchronously inside the click handler.
 					setTimeout(() => {
 						const range = document.createRange()
-						range.selectNodeContents(previewHtml)
+						range.selectNodeContents(root)
 						const sel = window.getSelection()
 						if (!sel) return
 						sel.removeAllRanges()
@@ -180,6 +187,18 @@ const boot = async () => {
 		showToast,
 	})
 	window.docs = docs
+	// A document's path can change without its text (Save As); both renderers resolve images against it
+	docs.onChange(preview.refresh)
+
+	// Any other web link (settings footer and the like) opens in the default browser, never inside markon.
+	// The preview's renderers handle their own links first and prevent the default.
+	document.addEventListener('click', e => {
+		if (e.defaultPrevented) return
+		const anchor = e.target instanceof Element ? e.target.closest('a[href]') : null
+		if (!anchor || !/^https?:/i.test(anchor.getAttribute('href'))) return
+		e.preventDefault()
+		openExternal(anchor.href)
+	})
 
 	createTabBar({ docs, container: document.getElementById('tab-bar-slot') })
 
@@ -190,16 +209,6 @@ const boot = async () => {
 	window.recentDropdown = recentDropdown
 
 	await docs.boot()
-	setupPreview({
-		getMarkdown,
-		getDocumentPath: () => docs.getActive()?.path ?? null,
-		openDocumentPath: path => docs.openPath(path),
-		onDocumentChanged: docs.onChange,
-		onMarkdownUpdated,
-		previewHtml,
-		profiler,
-		showToast,
-	})
 
 	// Adopted tab is now rendered in the DOM and populated in the editor —
 	// this is the authoritative "tab is built" moment. Fire the atomic

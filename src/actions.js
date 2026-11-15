@@ -1,3 +1,4 @@
+import { openExternal } from './native.js'
 import { applySpell, applyTheme, copySmart, createClickHandler, createElement } from './utils.js'
 
 // Check if PWA is installed (running in standalone mode)
@@ -195,6 +196,16 @@ const ACTIONS_CONFIG = [
 		},
 	},
 	{
+		id: 'find-in-document',
+		label: 'Find',
+		icon: 'tabler:search',
+		hotkey: 'ctrl+f',
+		gradient: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.2))',
+		showInToolbar: false,
+		// Searches the raw Markdown and the rendered preview together (find.js)
+		handler: () => window.findBar?.open(),
+	},
+	{
 		id: 'toggle-spell',
 		label: 'Spell',
 		icon: 'tabler:text-spellcheck',
@@ -308,6 +319,23 @@ const ACTIONS_CONFIG = [
 		isToggle: true,
 	},
 	{
+		id: 'toggle-github-renderer',
+		label: 'GitHub Renderer',
+		icon: 'tabler:brand-github',
+		hotkey: 'ctrl+g',
+		gradient: 'linear-gradient(135deg, rgba(107, 114, 128, 0.2), rgba(75, 85, 99, 0.2))',
+		showInToolbar: true,
+		handler: showToast => {
+			const preview = window.previewRenderer
+			if (!preview) return
+			const github = preview.getRenderer() !== 'github'
+			preview.setRenderer(github ? 'github' : 'markon')
+			document.getElementById('toggle-github-renderer')?.setAttribute('aria-pressed', String(github))
+			showToast(`renderer: ${github ? 'GitHub' : 'markon'}`, 1200, 'tabler:brand-github')
+		},
+		isToggle: true,
+	},
+	{
 		id: 'toggle-profiler',
 		label: 'Profiler',
 		icon: 'tabler:gauge-filled',
@@ -332,7 +360,7 @@ const ACTIONS_CONFIG = [
 		gradient: 'linear-gradient(135deg, rgba(107, 114, 128, 0.2), rgba(75, 85, 99, 0.2))',
 		showInToolbar: false,
 		handler: () => {
-			window.open('https://github.com/getmarkon/markon', '_blank')
+			openExternal('https://github.com/getmarkon/markon')
 		},
 	},
 ]

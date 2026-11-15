@@ -100,6 +100,22 @@
   background: var(--accent-alpha);
 }
 
+/* A preference with a choice: label left, dropdown right */
+.settings-pref-row.select {
+  grid-template-columns: 1fr auto;
+  cursor: default;
+}
+
+.settings-pref-row select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--text-alpha);
+  border-radius: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
 /* Shortcuts */
 .settings-shortcuts {
   display: grid;

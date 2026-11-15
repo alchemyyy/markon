@@ -1,4 +1,5 @@
 import { showContextMenu } from './context-menu.js'
+import { revealInFileBrowser } from './native.js'
 import { createElement } from './utils.js'
 
 // Pointer-event based reorder: more reliable than HTML5 drag in WebView2,
@@ -271,10 +272,13 @@ export const createTabBar = ({ docs, container }) => {
 		const all = docs.list()
 		const idx = all.findIndex(t => t.id === id)
 		if (idx < 0) return
+		const path = all[idx].path
 		showContextMenu({ x: clientX, y: clientY }, [
 			{ label: 'Close', onClick: () => docs.close(id) },
 			{ label: 'Close others', disabled: all.length <= 1, onClick: () => docs.closeOthers(id) },
 			{ label: 'Close all to right', disabled: idx === all.length - 1, onClick: () => docs.closeAllToRight(id) },
+			// Untitled tabs have no file to show
+			{ label: 'Show in file browser', disabled: !path, onClick: () => revealInFileBrowser(path) },
 		])
 	}
 

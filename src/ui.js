@@ -1,5 +1,7 @@
 import { createButtons } from './actions.js'
+import { createFindBar } from './find.js'
 import { setupHotkeys } from './hotkeys.js'
+import { setupPreview } from './preview.js'
 import { createPreviewManager, createResizeHandler } from './resize.js'
 import { createSettingsDialog } from './settings.js'
 import { createScrollSync } from './sync.js'
@@ -9,7 +11,7 @@ import createToolbar from './toolbar.js'
 import { applyTheme, createPointerHandler, createToast, getPrefTheme } from './utils.js'
 
 // Initialize UI components
-export const initUI = async ({ getMarkdown, setMarkdown, scrollToLine, view }) => {
+export const initUI = async ({ getMarkdown, setMarkdown, onMarkdownUpdated, profiler, scrollToLine, view }) => {
 	// Setup toast
 	const toast = document.getElementById('toast')
 	const showToast = createToast(toast)
@@ -78,17 +80,20 @@ export const initUI = async ({ getMarkdown, setMarkdown, scrollToLine, view }) =
 	// Setup toolbar with auto-hide behavior
 	createToolbar()
 
-	// Setup TOC
+	// Setup preview renderers, then the TOC and editor sync that follow whichever one is shown
 	const previewHtml = document.getElementById('previewhtml')
 	const previewContainer = document.getElementById('preview')
-	if (previewHtml && previewContainer) {
-		createTOC(previewHtml, previewContainer, { getMarkdown, scrollToLine })
+	const preview = setupPreview({ getMarkdown, onMarkdownUpdated, previewHtml, profiler, scrollToLine, showToast })
+	const rendererBtn = document.getElementById('toggle-github-renderer')
+	rendererBtn?.setAttribute('aria-pressed', String(preview.getRenderer() === 'github'))
+	if (previewContainer) {
+		createTOC(preview, previewContainer, { getMarkdown, scrollToLine })
 	}
 
 	// Setup editor sync
 	let editorSync = null
 	if (view && previewContainer) {
-		editorSync = createScrollSync(view, previewContainer, getMarkdown, scrollToLine)
+		editorSync = createScrollSync(view, preview, previewContainer, getMarkdown, scrollToLine)
 		const syncEnabled = localStorage.getItem('editor-sync-enabled') === 'true'
 		if (syncEnabled) {
 			editorSync.enable()
@@ -103,13 +108,15 @@ export const initUI = async ({ getMarkdown, setMarkdown, scrollToLine, view }) =
 	window.getMarkdown = getMarkdown
 	window.setMarkdown = setMarkdown
 	window.previewManager = previewManager
+	// Not `window.preview`: that name already resolves to the #preview element
+	window.previewRenderer = preview
 	window.showToast = showToast
 	window.editorSync = editorSync
+	if (view) window.findBar = createFindBar({ view, preview })
 	window.readClipboardSmart = async () => {
 		const { readClipboardSmart } = await import('./utils.js')
 		return readClipboardSmart()
 	}
 
-	// Return preview HTML element for preview module
-	return { previewHtml: document.getElementById('previewhtml'), showToast }
+	return { previewHtml, preview, showToast }
 }
